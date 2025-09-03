@@ -1,0 +1,248 @@
+﻿@* Pages/RSVP/Index.razor *@
+@page "/rsvp"
+@inject WeddingDbContext DbContext
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILogger<RSVP.Index> logger;
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using WeddingApp.Data.Reservations
+@inherits LayoutComponentBase
+@rendermode InteractiveServer
+
+<PageTitle>RSVP Management</PageTitle>
+
+<div class="animate-fade-in">
+    <h2 class="text-center script-text mb-2 mt-2">RSVP Management</h2>
+
+    @if (_isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner"></div>
+        </div>
+    }
+    else if (_isAdminOrPlanner)
+    {
+        <AuthorizeView>
+        <!-- Admin/Planner View - All Reservations -->
+        <div class="mb-3">
+            <button class="btn btn-primary" onclick="@(CreateNewReservation)">
+                + Create New Reservation
+            </button>
+        </div>
+
+        <div class="tile-container">
+            @foreach (var reservation in _allReservations)
+            {
+                <div class="tile" @onclick="() => ViewReservation(reservation.RegistrationToken)">
+                    <div class="tile-header">
+                        @(reservation.People.FirstOrDefault(p => p.IsPrimaryGuest)?.Name ?? "Unnamed Reservation")
+                    </div>
+
+                    <div class="tile-content">
+                        <p>
+                            Code: <strong>@reservation.RegistrationToken</strong>
+                        </p>
+                        <p>Guests: @reservation.People.Count</p>
+                        <p>
+                            Status:
+                            @switch (reservation.Status)
+                            {
+                                case ReservationStatus.Confirmed:
+                                    <span class="tag tag-success">Confirmed</span>
+                                    break;
+                                case ReservationStatus.Pending:
+                                    <span class="tag tag-warning">Pending</span>
+                                    break;
+                                case ReservationStatus.NotAttending:
+                                    <span class="tag tag-danger">Not Attending</span>
+                                    break;
+                            }
+                        </p>
+
+                        @if (reservation.People.Any(p => p.DietaryRequirements))
+                        {
+                            <p style="color: var(--warning); font-size: var(--text-xs);">
+                                ⚠️ Dietary requirements noted
+                            </p>
+                            @foreach (var person in reservation.People.Where(p => p.DietaryRequirements).ToList())
+                            {
+                                <p>@person.Name: @person.DietaryRequirementsDescription</p>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+        </AuthorizeView>
+    }
+    else if (_userReservation != null)
+    {
+        <!-- Guest View - Redirect to their reservation -->
+        
+        ViewReservation(_userReservation.RegistrationToken);
+    }
+    else
+    {
+        <!-- Guest with no reservation -->
+        <div class="glass-card text-center">
+            <h3>No Reservation Found</h3>
+            <p>If you have a registration code, you can enter it below:</p>
+
+            <div class="form-group" style="max-width: 300px; margin: var(--space-xl) auto;">
+                <input type="text" class="form-input" placeholder="" @bind="_registrationCode"/>
+                <label class="form-label">Registration Code</label>
+            </div>
+
+            <button class="btn btn-primary" @onclick="GoToRegistration">View RSVP</button>
+        </div>
+    }
+</div>
+
+@if (_showCreateModal)
+{
+    <div class="modal-backdrop" @onclick="CloseCreateModal">
+        <div class="modal-content glass-card" @onclick:stopPropagation="true">
+            <h3>Create New Reservation</h3>
+
+            <div class="form-group">
+                <input type="text" class="form-input" placeholder="" @bind="_newGuestName"/>
+                <label class="form-label">Primary Guest Name</label>
+            </div>
+
+            <div class="form-group">
+                <input type="email" class="form-input" placeholder="" @bind="_newGuestEmail"/>
+                <label class="form-label">Email (Optional)</label>
+            </div>
+
+            <div class="form-group">
+                <InputNumber class="form-input" @bind-Value="_newReservationMaxGuests"></InputNumber>
+                
+                <label class="form-label">Max Allowed Guests</label>
+            </div>
+
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                <button style="flex: 1" class="btn btn-danger" @onclick="CloseCreateModal">Cancel</button>
+                <button style="flex: 1" class="btn btn-secondary" @onclick="SaveNewReservation">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        max-width: 700px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+</style>
+
+
+
+@code {
+    private bool _isLoading = true;
+    private bool _isAdminOrPlanner;
+    private string? _userId;
+    private List<Reservation> _allReservations = new();
+    private Reservation? _userReservation;
+    private string _registrationCode = "";
+    private bool _showCreateModal = false;
+    private string _newGuestName = "";
+    private string _newGuestEmail = "";
+    private int _newReservationMaxGuests = 5;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        _isAdminOrPlanner = authState.User.IsInRole("Admin") || authState.User.IsInRole("Planner");
+
+        if (_isAdminOrPlanner)
+        {
+            _allReservations = await DbContext.Reservations
+                .Include(r => r.People)
+                .OrderByDescending(r => r.CreatedDateTime)
+                .ToListAsync();
+        }
+        else if (!string.IsNullOrEmpty(_userId))
+        {
+            // Find reservation linked to this user
+            _userReservation = await DbContext.Reservations
+                .Include(r => r.People)
+                .FirstOrDefaultAsync(r => r.People.Any(p => p.UserId == _userId));
+        }
+
+        _isLoading = false;
+
+
+    }
+
+    private void ViewReservation(string token)
+    {
+        Navigation.NavigateTo($"/rsvp/{token}");
+    }
+
+    private void GoToRegistration()
+    {
+        if (!string.IsNullOrEmpty(_registrationCode))
+        {
+            Navigation.NavigateTo($"/rsvp/{_registrationCode}");
+        }
+    }
+
+    private void CreateNewReservation()
+    {
+        _showCreateModal = true;
+    }
+
+    private void CloseCreateModal()
+    {
+        _showCreateModal = false;
+        _newGuestName = "";
+        _newGuestEmail = "";
+    }
+
+    private async Task SaveNewReservation()
+    {
+        if (string.IsNullOrEmpty(_newGuestName))
+            return;
+
+        var reservation = new Reservation
+        {
+            Status = ReservationStatus.Pending,
+            MaxGuests = _newReservationMaxGuests
+        };
+
+        var primaryGuest = new ReservationPerson
+        {
+            ReservationId = reservation.Id,
+            Name = _newGuestName,
+            Email = _newGuestEmail,
+            IsPrimaryGuest = true
+        };
+
+        reservation.People.Add(primaryGuest);
+        DbContext.Reservations.Add(reservation);
+        await DbContext.SaveChangesAsync();
+
+        CloseCreateModal();
+        Navigation.NavigateTo($"/rsvp/{reservation.RegistrationToken}");
+    }
+    
+    
+}

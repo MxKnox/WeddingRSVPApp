@@ -1,0 +1,74 @@
+﻿@implements IDisposable
+@inject IJSRuntime Js
+
+<div class="countdown-wrapper glass-card">
+    <h2 class="countdown-title">Countdown to Our Special Day</h2>
+    <div class="countdown">
+        <div class="countdown-block">
+            <div class="countdown-number">@_days</div>
+            <div class="countdown-label">Days</div>
+        </div>
+        <div class="countdown-block">
+            <div class="countdown-number">@_hours</div>
+            <div class="countdown-label">Hours</div>
+        </div>
+        <div class="countdown-block">
+            <div class="countdown-number">@_minutes</div>
+            <div class="countdown-label">Minutes</div>
+        </div>
+        <div class="countdown-block">
+            <div class="countdown-number">@_seconds</div>
+            <div class="countdown-label">Seconds</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public DateTime EventDate { get; set; }
+
+    private int _days;
+    private int _hours;
+    private int _minutes;
+    private int _seconds;
+    private Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        UpdateCountdown();
+
+        _timer = new Timer(_ =>
+            {
+                InvokeAsync(() =>
+                {
+                    UpdateCountdown();
+                    StateHasChanged();
+                });
+            },
+            null,
+            TimeSpan.Zero,
+            TimeSpan.FromSeconds(1));
+    }
+
+    private void UpdateCountdown()
+    {
+        var timeSpan = EventDate - DateTime.Now;
+
+        if (timeSpan.TotalSeconds > 0)
+        {
+            _days = timeSpan.Days;
+            _hours = timeSpan.Hours;
+            _minutes = timeSpan.Minutes;
+            _seconds = timeSpan.Seconds;
+        }
+        else
+        {
+            _days = _hours = _minutes = _seconds = 0;
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+
+}

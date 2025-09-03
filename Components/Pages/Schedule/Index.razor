@@ -1,0 +1,297 @@
+﻿@* Pages/Schedule/Index.razor *@
+@page "/schedule"
+@rendermode InteractiveServer
+@inject WeddingDbContext DbContext
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IOptions<WeddingOptions> Options
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Options
+@using WeddingApp.Data.Schedule
+@using WeddingApp.Options
+@inherits LayoutComponentBase
+
+<PageTitle>Schedule</PageTitle>
+
+
+<div class="animate-fade-in">
+    <h2 class="text-center script-text mb-2 mt-2">Schedule</h2>
+    @if (_isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner"></div>
+        </div>
+    }
+    else
+    {
+        @if (_isAdminOrPlanner)
+        {
+            <div class="mb-3">
+                <button class="btn btn-primary" @onclick="AddNewEntry">
+                    + Add Schedule Entry
+                </button>
+            </div>
+        }
+
+        <ScheduleAccordion Entries="@_scheduleEntries" Locations="@_locations" IsPublic="false" OnEdit="EditEntry"/>
+    }
+</div>
+
+@if (_showEditModal)
+{
+    <div class="modal-backdrop" @onclick="CloseEditModal">
+        <div class="modal-content glass-card" @onclick:stopPropagation="true">
+            <h3>
+                @(_editingEntry.Id == Guid.Empty ? "Add" : "Edit") Schedule Entry
+            </h3>
+
+            <div class="form-group">
+                <input type="text" class="form-input" placeholder="" @bind="_editingEntry.Title"/>
+                <label class="form-label">Title</label>
+            </div>
+
+            <div class="form-group">
+                <textarea class="form-input form-textarea" placeholder="" @bind="_editingEntry.Description"></textarea>
+                <label class="form-label">Description</label>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md);">
+                <div class="form-group">
+                    <input type="datetime-local" class="form-input" @bind="_editingEntry.StartTime"/>
+                    <label class="form-label">Start Time</label>
+                </div>
+
+                <div class="form-group">
+                    <input type="datetime-local" class="form-input" @bind="_editingEntry.EndTime"/>
+                    <label class="form-label">End Time</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <select class="form-input" @bind="_editingEntry.LocationId">
+                    @foreach (var location in _locations)
+                    {
+                        <option value="@location.Id">@location.Name</option>
+                    }
+                </select>
+                <label class="form-label">Location</label>
+            </div>
+
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                <button style="flex: 1" class="btn btn-primary" @onclick="CloseEditModal">Cancel</button>
+                @if (!CanSave())
+                {
+                    <button style="flex: 1" class="btn btn-secondary-ghost" disabled>Save</button>
+                }
+                else
+                {
+                    <button style="flex: 1" class="btn btn-secondary" @onclick="SaveEntry">Save</button>
+                }
+
+
+                @if (_editingEntry.Id != Guid.Empty)
+                {
+                    <button style="flex: 1" class="btn btn-danger" @onclick="ConfirmDeleteEntry">Delete</button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        max-width: 700px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+</style>
+
+<!-- Native Blazor Confirmation Dialog -->
+@if (showConfirmationDialog)
+{
+<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div class="glass-card animate-fade-in" style="width: 90%; max-width: 400px; text-align: center;">
+        <h4 style="color: var(--primary); font-family: var(--font-display); margin-bottom: var(--space-lg);">@confirmationTitle</h4>
+        <p style="color: var(--dark-gray); margin-bottom: var(--space-xl);">@confirmationMessage</p>
+        <div style="display: flex; gap: var(--space-md); justify-content: center;">
+            <button style="flex: 1" class="btn btn-ghost" @onclick="() => ConfirmAction(false)">Cancel</button>
+            <button style="flex: 1" class="btn btn-danger" @onclick="() => ConfirmAction(true)">@confirmationAction</button>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private List<ScheduleEntry> _scheduleEntries = new();
+    private List<Location> _locations = new();
+    private bool _isAdminOrPlanner;
+    private bool _showEditModal;
+    private ScheduleEntry _editingEntry = new();
+    
+    // Native Blazor Confirmation Dialog
+    private bool showConfirmationDialog = false;
+    private string confirmationTitle = "";
+    private string confirmationMessage = "";
+    private string confirmationAction = "";
+    private TaskCompletionSource<bool>? confirmationTaskCompletionSource;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _isAdminOrPlanner = authState.User.IsInRole("Admin") || authState.User.IsInRole("Planner");
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _isLoading = true;
+
+        _scheduleEntries = await DbContext.ScheduleEntries
+            .OrderBy(s => s.StartTime)
+            .ToListAsync();
+
+        _locations = await DbContext.Locations
+            .OrderBy(l => l.Name)
+            .ToListAsync();
+
+        _isLoading = false;
+    }
+
+    private async Task AddNewEntry()
+    {
+        var lastTime = await DbContext.ScheduleEntries.OrderByDescending(s => s.EndTime)
+            .FirstOrDefaultAsync();
+
+        var startTime = lastTime != null ? lastTime.EndTime : Options.Value.WeddingDate;
+
+        _editingEntry = new ScheduleEntry
+        {
+            StartTime = startTime,
+            EndTime = startTime.AddHours(1)
+        };
+        _showEditModal = true;
+    }
+
+    private void EditEntry(ScheduleEntry entry)
+    {
+        _editingEntry = new ScheduleEntry
+        {
+            Id = entry.Id,
+            Title = entry.Title,
+            Description = entry.Description,
+            StartTime = entry.StartTime,
+            EndTime = entry.EndTime,
+            LocationId = entry.LocationId
+        };
+        _showEditModal = true;
+    }
+
+    private void CloseEditModal()
+    {
+        _showEditModal = false;
+        _editingEntry = new ScheduleEntry();
+    }
+
+    private bool CanSave()
+    {
+        return _editingEntry is
+        {
+            Title: not null,
+            LocationId: not null,
+            Description: not null
+        };
+    }
+
+    private async Task SaveEntry()
+    {
+        var existing = await DbContext.ScheduleEntries.FindAsync(_editingEntry.Id);
+        if (existing != null)
+        {
+            existing.Title = _editingEntry.Title;
+            existing.Description = _editingEntry.Description;
+            existing.StartTime = _editingEntry.StartTime;
+            existing.EndTime = _editingEntry.EndTime;
+            existing.LocationId = _editingEntry.LocationId;
+        }
+        else
+        {
+            DbContext.ScheduleEntries.Add(_editingEntry);
+        }
+
+        await DbContext.SaveChangesAsync();
+        CloseEditModal();
+        await LoadData();
+
+        _editingEntry = new ScheduleEntry();
+    }
+
+    private async Task DeleteEntry()
+    {
+        if (_editingEntry.Id != Guid.Empty)
+        {
+            var existing = await DbContext.ScheduleEntries.FindAsync(_editingEntry.Id);
+            if (existing != null)
+            {
+                DbContext.ScheduleEntries.Remove(existing);
+                await DbContext.SaveChangesAsync();
+            }
+        }
+
+        CloseEditModal();
+        await LoadData();
+    }
+
+    // Native Blazor Confirmation Dialog Methods
+    private async Task ConfirmDeleteEntry()
+    {
+        if (!_isAdminOrPlanner) return;
+
+        var confirmed = await ShowConfirmationAsync(
+            "Confirm Delete", 
+            $"Are you sure you want to delete the scheduled event '{_editingEntry.Title}'? This action cannot be undone.",
+            "Delete"
+        );
+        
+        if (confirmed)
+        {
+            await DeleteEntry();
+        }
+    }
+    
+    private async Task<bool> ShowConfirmationAsync(string title, string message, string actionText)
+    {
+        confirmationTitle = title;
+        confirmationMessage = message;
+        confirmationAction = actionText;
+        showConfirmationDialog = true;
+        
+        confirmationTaskCompletionSource = new TaskCompletionSource<bool>();
+        StateHasChanged();
+        
+        return await confirmationTaskCompletionSource.Task;
+    }
+
+    private void ConfirmAction(bool confirmed)
+    {
+        showConfirmationDialog = false;
+        confirmationTaskCompletionSource?.SetResult(confirmed);
+        confirmationTaskCompletionSource = null;
+        StateHasChanged();
+    }
+}

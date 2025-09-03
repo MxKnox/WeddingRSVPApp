@@ -1,0 +1,143 @@
+﻿@* MainLayout.razor *@
+@using Microsoft.Extensions.Options
+@using WeddingApp.Options
+@inherits LayoutComponentBase
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@inject IConfiguration Configuration
+@inject IOptions<WeddingOptions> weddingOptions;
+
+<div class="navbar">
+    <div class="container">
+        <div class="navbar-content">
+            <a href="/" class="navbar-brand">
+                @weddingOptions.Value.GroomName & @weddingOptions.Value.BrideName
+            </a>
+            <ul class="navbar-menu">
+                <li>
+                    <a href="/" class="navbar-link @GetActiveClass("/")">Home</a>
+                </li>
+                <li>
+                    <a href="/rsvp" class="navbar-link @GetActiveClass("/rsvp")">RSVP</a>
+                </li>
+                <li>
+                    <a href="/schedule" class="navbar-link @GetActiveClass("/schedule")">Schedule</a>
+                </li>
+                <li>
+                    <a href="/locations" class="navbar-link @GetActiveClass("/locations")">Venues</a>
+                </li>
+
+
+                <AuthorizeView>
+                    <Authorized>
+                        <li>
+                            <a href="/giving" class="navbar-link @GetActiveClass("/giving")">Registry</a>
+                        </li>
+                        <li>
+                            <a href="/files" class="navbar-link @GetActiveClass("/files")">Photos</a>
+                        </li>
+
+                        @if (context.User.IsInRole("Admin") || context.User.IsInRole("Planner"))
+                        {
+                            <li>
+                                <a href="/admin" class="navbar-link">Admin</a>
+                            </li>
+                        }
+
+                        <li>
+                            <form method="post" action="/account/logout">
+                                <button type="submit" class="btn btn-ghost btn-sm">Logout</button>
+                            </form>
+                        </li>
+                    </Authorized>
+
+                    <NotAuthorized>
+                        <li>
+                            <a href="/account/login" class="navbar-link">Login</a>
+                        </li>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<main>
+    <div class="container">
+        @Body
+    </div>
+</main>
+
+<CascadingValue Value="this">
+    @ChildContent
+</CascadingValue>
+
+@if (currentRequest != null)
+{
+    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div class="glass-card animate-fade-in" style="width: 90%; max-width: 600px; text-align: center;">
+            <h4 style="color: var(--primary); font-family: var(--font-display); margin-bottom: var(--space-lg);">@currentRequest.Title</h4>
+            <p style="color: var(--dark-gray); margin-bottom: var(--space-xl);">@currentRequest.Message</p>
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                @if (currentRequest.Type == ConfirmationType.Confirm)
+                {
+                    <button class="btn btn-ghost" @onclick="() => RespondToConfirmation(false)">@currentRequest.CancelText</button>
+                }
+                <button class="btn @GetConfirmButtonClass()" @onclick="() => RespondToConfirmation(true)">@currentRequest.ConfirmText</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Inject] private IConfirmationService ConfirmationService { get; set; } = null!;
+
+    private ConfirmationRequest? currentRequest;
+
+    protected override void OnInitialized()
+    {
+        if (ConfirmationService is ConfirmationService service)
+        {
+            service.OnConfirmationRequested += HandleConfirmationRequest;
+        }
+    }
+
+    private async Task HandleConfirmationRequest(ConfirmationRequest request)
+    {
+        currentRequest = request;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void RespondToConfirmation(bool confirmed)
+    {
+        if (currentRequest != null)
+        {
+            currentRequest.TaskCompletionSource.SetResult(confirmed);
+            currentRequest = null;
+            StateHasChanged();
+        }
+    }
+
+    private string GetConfirmButtonClass()
+    {
+        return currentRequest?.Type == ConfirmationType.Confirm && currentRequest.ConfirmText == "Delete"
+            ? "btn-danger"
+            : "btn-primary";
+    }
+
+    public void Dispose()
+    {
+        if (ConfirmationService is ConfirmationService service)
+        {
+            service.OnConfirmationRequested -= HandleConfirmationRequest;
+        }
+    }
+
+    private string GetActiveClass(string path)
+    {
+        return Navigation.Uri.EndsWith(path) ? "active" : "";
+    }
+
+}

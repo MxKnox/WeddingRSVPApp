@@ -1,0 +1,250 @@
+﻿@* Pages/Locations/Index.razor *@
+@page "/locations"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using WeddingApp.Data.Schedule
+@inject WeddingDbContext DbContext
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Venues</PageTitle>
+
+<div class="animate-fade-in">
+    <h2 class="text-center script-text mb-2 mt-2">Wedding Venues</h2>
+
+    @if (_isAdminOrPlanner)
+    {
+        <div class="mb-3">
+            <button class="btn btn-primary" @onclick="AddNewLocation">
+                + Add Location
+            </button>
+        </div>
+    }
+
+    <div class="tile-container">
+        @foreach (var location in _locations)
+        {
+            <div class="tile">
+                <h4 style="color: var(--primary); margin-bottom: var(--space-sm);">
+                    @location.Name
+                </h4>
+                <LocationCard Location="location" IsCompact="false"/>
+
+                @if (_isAdminOrPlanner)
+                {
+                <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                        <button style="flex: 1" class="btn btn-primary btn-sm" @onclick="() => EditLocation(location)">Edit</button>
+                        <button style="flex: 1" class="btn btn-danger btn-sm" @onclick="() => ConfirmDeleteLocation(location)">Delete</button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@if (_showEditModal)
+{
+    <div class="modal-backdrop" @onclick="CloseEditModal">
+        <div class="modal-content glass-card" @onclick:stopPropagation="true">
+            <h3>@(_editingLocation.Id == Guid.Empty ? "Add" : "Edit") Location</h3>
+
+            <div class="form-group">
+                <input type="text" class="form-input" @bind="_editingLocation.Name" />
+                <label class="form-label">Name</label>
+            </div>
+
+            <div class="form-group">
+                <input type="text" class="form-input" @bind="_editingLocation.ContactDetails" />
+                <label class="form-label">Contact Details</label>
+            </div>
+
+            <div class="form-group">
+                <input type="url" class="form-input" @bind="_editingLocation.Website" />
+                <label class="form-label">Website</label>
+            </div>
+
+            <div class="form-group">
+                <textarea class="form-input form-textarea" @bind="_editingLocation.Address"></textarea>
+                <label class="form-label">Address</label>
+            </div>
+
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                <button style="flex: 1" class="btn btn-danger" @onclick="CloseEditModal">Cancel</button>
+                <button style="flex: 1" class="btn btn-secondary" @onclick="SaveLocation">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    
+    .modal-content {
+        max-width: 700px;
+        width: 80%;
+    }
+</style>
+
+<!-- Native Blazor Confirmation Dialog -->
+@if (showConfirmationDialog)
+{
+<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div class="glass-card animate-fade-in" style="width: 90%; max-width: 400px; text-align: center;">
+        <h4 style="color: var(--primary); font-family: var(--font-display); margin-bottom: var(--space-lg);">@confirmationTitle</h4>
+        <p style="color: var(--dark-gray); margin-bottom: var(--space-xl);">@confirmationMessage</p>
+        <div style="display: flex; gap: var(--space-md); justify-content: center;">
+            <button style="flex: 1" class="btn btn-ghost" @onclick="() => ConfirmAction(false)">Cancel</button>
+            <button style="flex: 1" class="btn btn-danger" @onclick="() => ConfirmAction(true)">@confirmationAction</button>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    private List<Location> _locations = new();
+    private bool _isAdminOrPlanner = false;
+    private bool _showEditModal = false;
+    private Location _editingLocation = new();
+
+    // Native Blazor Confirmation Dialog
+    private bool showConfirmationDialog = false;
+    private string confirmationTitle = "";
+    private string confirmationMessage = "";
+    private string confirmationAction = "";
+    private TaskCompletionSource<bool>? confirmationTaskCompletionSource;
+
+    
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _isAdminOrPlanner = authState.User.IsInRole("Admin") || authState.User.IsInRole("Planner");
+        await LoadLocations();
+    }
+
+    private async Task LoadLocations()
+    {
+        _locations = await DbContext.Locations
+            .OrderBy(l => l.Name)
+            .ToListAsync();
+    }
+
+    private void AddNewLocation()
+    {
+        _editingLocation = new Location();
+        _showEditModal = true;
+    }
+
+    private void EditLocation(Location location)
+    {
+        _editingLocation = new Location
+        {
+            Id = location.Id,
+            Name = location.Name,
+            ContactDetails = location.ContactDetails,
+            Website = location.Website,
+            Address = location.Address
+        };
+        _showEditModal = true;
+    }
+
+    private void CloseEditModal()
+    {
+        _showEditModal = false;
+        _editingLocation = new();
+    }
+
+    private async Task SaveLocation()
+    {
+        var existing = await DbContext.Locations.FindAsync(_editingLocation.Id);
+        if (existing != null)
+        {
+            existing.Name = _editingLocation.Name;
+            existing.ContactDetails = _editingLocation.ContactDetails;
+            existing.Website = _editingLocation.Website;
+            existing.Address = _editingLocation.Address;
+        }
+        else
+        {
+            DbContext.Locations.Add(_editingLocation);
+        }
+        
+        await DbContext.SaveChangesAsync();
+        CloseEditModal();
+        await LoadLocations();
+
+        // get new edit location for additional adding
+        _editingLocation = new();
+    }
+
+    private async Task DeleteLocation(Location location)
+    {
+        // Check if location is used in schedule
+        var hasSchedule = await DbContext.ScheduleEntries
+            .AnyAsync(s => s.LocationId == location.Id);
+
+        if (hasSchedule)
+        {
+            // Remove the reference instead of deleting entries
+            var entries = await DbContext.ScheduleEntries
+                .Where(s => s.LocationId == location.Id)
+                .ToListAsync();
+
+            foreach (var entry in entries)
+            {
+                entry.LocationId = null;
+            }
+        }
+
+        DbContext.Locations.Remove(location);
+        await DbContext.SaveChangesAsync();
+        await LoadLocations();
+    }
+    
+    // Native Blazor Confirmation Dialog Methods
+    private async Task ConfirmDeleteLocation(Location venue)
+    {
+        if (!_isAdminOrPlanner) return;
+
+        var confirmed = await ShowConfirmationAsync(
+            "Confirm Delete", 
+            $"Are you sure you want to delete the location '{venue.Name}'? This action cannot be undone.",
+            "Delete"
+        );
+        
+        if (confirmed)
+        {
+            await DeleteLocation(venue);
+        }
+    }
+    
+    private async Task<bool> ShowConfirmationAsync(string title, string message, string actionText)
+    {
+        confirmationTitle = title;
+        confirmationMessage = message;
+        confirmationAction = actionText;
+        showConfirmationDialog = true;
+        
+        confirmationTaskCompletionSource = new TaskCompletionSource<bool>();
+        StateHasChanged();
+        
+        return await confirmationTaskCompletionSource.Task;
+    }
+
+    private void ConfirmAction(bool confirmed)
+    {
+        showConfirmationDialog = false;
+        confirmationTaskCompletionSource?.SetResult(confirmed);
+        confirmationTaskCompletionSource = null;
+        StateHasChanged();
+    }
+}

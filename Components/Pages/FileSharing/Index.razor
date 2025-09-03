@@ -1,0 +1,594 @@
+﻿@* Pages/files/Index.razor *@
+@page "/files/{**Path}"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IWebHostEnvironment Environment
+@inject NavigationManager Navigation
+@inject IJSRuntime Js
+@inject IConfiguration Configuration
+@inject IOptions<WeddingOptions> WeddingOptions;
+@using System.Security.Claims
+@using Microsoft.Extensions.Options
+@using WeddingApp.Options
+@inherits LayoutComponentBase
+
+<PageTitle>Photo & File Sharing</PageTitle>
+<script>
+    window.triggerFileDownload = (fileName, url) => {
+        const anchorElement = document.createElement('a');
+        anchorElement.href = url;
+        anchorElement.download = fileName ?? '';
+        anchorElement.click();
+        anchorElement.remove();
+    }
+</script>
+<div class="animate-fade-in">
+    <h2 class="text-center script-text mb-2 mt-2">Photo & File Sharing</h2>
+
+    <div class="file-explorer">
+        <!-- Breadcrumb Navigation -->
+        <div class="file-breadcrumb">
+            @if (!string.IsNullOrEmpty(Path))
+            {
+                <button class="btn btn-ghost btn-sm" @onclick="NavigateBack" title="Go Back">← Back</button>
+                <button class="btn btn-ghost btn-sm" @onclick="NavigateHome" title="Go Home">🏠 Home</button>
+                <span class="breadcrumb-separator">|</span>
+            }
+
+            <span class="breadcrumb-item" @onclick="NavigateHome" style="cursor: pointer;">
+                📁 Root
+            </span>
+
+            @foreach (var segment in _pathSegments)
+            {
+                <span class="breadcrumb-separator">/</span>
+                <span class="breadcrumb-item" @onclick="() => NavigateToPath(segment.Path)">
+                    @segment.Name
+                </span>
+            }
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display: flex; gap: var(--space-md); margin-bottom: var(--space-lg);">
+            <button class="btn btn-secondary-ghost" @onclick="ShowUploadModal">📤 Upload Files</button>
+            <button class="btn btn-secondary-ghost" @onclick="ShowCreateFolderModal">📁 New Folder</button>
+        </div>
+
+        <!-- File/Folder Grid -->
+        <div class="file-grid">
+            @foreach (var folder in _folders)
+            {
+                <div class="file-item" @onclick="() => NavigateToFolder(folder)" title="@folder">
+                    <div class="file-icon">📁</div>
+                    <div class="file-name">@folder</div>
+                    @if (_isAdmin && CanDeleteFolder(folder))
+                    {
+                        <button class="btn btn-danger btn-sm"
+                                style="margin-top: var(--space-sm);"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => DeleteFolder(folder)">
+                            Delete
+                        </button>
+                    }
+                </div>
+            }
+
+            @foreach (var file in _files)
+            {
+                <div class="file-item" @onclick="() => ViewFile(file)" title="@file.Name">
+                    <div class="file-icon">
+                        @if (IsImage(file.Name))
+                        {
+                            <img src="@GetFileUrl(file)"
+                                 style="width: 60px; height: 60px; object-fit: cover; border-radius: var(--radius-sm);"/>
+                        }
+                        else if (IsVideo(file.Name))
+                        {
+                            <span>🎥</span>
+                        }
+                        else
+                        {
+                            <span>📄</span>
+                        }
+                    </div>
+
+                    <div class="file-name">@file.Name</div>
+                    <div style="font-size: var(--text-xs); color: var(--dark-gray);">
+                        @FormatFileSize(file.Length)
+                    </div>
+
+                    @if (_isAdmin)
+                    {
+                        <button class="btn btn-danger btn-sm"
+                                style="margin-top: var(--space-sm);"
+                                @onclick:stopPropagation="true"
+                                @onclick="() => ConfirmDeleteFile(file)">
+                            Delete
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (!_folders.Any() && !_files.Any())
+        {
+            <div class="text-center" style="padding: var(--space-3xl);">
+                <p style="color: var(--dark-gray);">This folder is empty</p>
+                <button class="btn btn-primary mt-3" @onclick="ShowUploadModal">Upload First Files</button>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Upload Modal -->
+@if (_showUpload)
+{
+    <div class="modal-backdrop" @onclick="CloseUploadModal">
+        <div class="modal-content text glass-card" @onclick:stopPropagation="true">
+            <h3>Upload Files</h3>
+            <div style="border: 2px dashed var(--primary); border-radius: var(--radius-lg);
+                        padding: var(--space-2xl); text-align: center; margin: var(--space-lg) 0;">
+                <InputFile OnChange="HandleFileSelection" multiple accept="*"
+                           id="fileInput" style="display: none;"/>
+                <label for="fileInput" style="cursor: pointer;">
+                    <div class="file-icon" style="font-size: 3rem;">📤</div>
+                    <p>Click to select files or drag and drop</p>
+                    <p style="font-size: var(--text-sm); color: var(--dark-gray);">
+                        Max file size: @FormatFileSize(@WeddingOptions.Value.MaxUploadSizeMb *1024 * 1024)
+                    </p>
+                </label>
+            </div>
+
+            @if (_selectedFiles.Any())
+            {
+                <div style="margin-top: var(--space-lg);">
+                    <h4>Selected Files:</h4>
+                    @foreach (var file in _selectedFiles)
+                    {
+                        <div style="display: flex; justify-content: space-between; padding: var(--space-sm);
+                                    background: var(--light-gray); border-radius: var(--radius-sm); margin-bottom: var(--space-sm);">
+                            <span>@file.Name</span>
+                            <span style="color: var(--dark-gray);">@FormatFileSize(file.Size)</span>
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (_isUploading)
+            {
+                <div class="text-center">
+                    <div class="spinner"></div>
+                    <p>Uploading files...</p>
+                </div>
+            }
+
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                <button style="flex: 1"  class="btn btn-danger-ghost" @onclick="CloseUploadModal" disabled="@_isUploading">Cancel</button>
+                <button style="flex: 1"  class="btn btn-secondary" @onclick="UploadFiles" disabled="@(!_selectedFiles.Any() || _isUploading)">
+                    Upload @_selectedFiles.Count @(_selectedFiles.Count == 1 ? "File" : "Files")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Create Folder Modal -->
+@if (_showCreateFolder)
+{
+    <div class="modal-backdrop" @onclick="CloseCreateFolderModal">
+        <div class="modal-content glass-card" @onclick:stopPropagation="true">
+            <h3>Create New Folder</h3>
+            <div class="form-group">
+                <input type="text" class="form-input" placeholder=" " @bind="_newFolderName"/>
+                <label class="form-label">Folder Name</label>
+            </div>
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                <button style="flex: 1" class="btn btn-ghost" @onclick="CloseCreateFolderModal">Cancel</button>
+                <button style="flex: 1" class="btn btn-secondary" @onclick="CreateFolder">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- File Viewer Modal -->
+@if (_showViewer && _viewingFile != null)
+{
+    <div class="modal-backdrop" @onclick="CloseViewer" style="background: rgba(0, 0, 0, 0.9);">
+        <div class="modal-content" style="max-width: 90vw; max-height: 90vh;" @onclick:stopPropagation="true">
+            <div style="margin-left:auto; margin-right:auto; max-width: fit-content;">
+                @if (IsImage(_viewingFile.Name))
+                {
+                    <img src="@GetFileUrl(_viewingFile)" style="max-width: 100%; max-height: 80vh; object-fit: contain;"/>
+                }
+                else if (IsVideo(_viewingFile.Name))
+                {
+                    <video controls style="max-width: 100%; max-height: 80vh;">
+                        <source src="@GetFileUrl(_viewingFile)"/>
+                    </video>
+                }
+            </div>
+            <div style="text-align: center; margin-top: var(--space-lg);">
+                <p style="color: var(--white);">@_viewingFile.Name</p>
+                <button class="btn btn-primary" @onclick="CloseViewer">Close</button>
+                <button class="btn btn-secondary" @onclick="Download">Download</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        align-self: center;
+        align-items: center;
+        max-width: 700px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+</style>
+
+<!-- Native Blazor Confirmation Dialog -->
+@if (showConfirmationDialog)
+{
+<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div class="glass-card animate-fade-in" style="width: 90%; max-width: 400px; text-align: center;">
+        <h4 style="color: var(--primary); font-family: var(--font-display); margin-bottom: var(--space-lg);">@confirmationTitle</h4>
+        <p style="color: var(--dark-gray); margin-bottom: var(--space-xl);">@confirmationMessage</p>
+        <div style="display: flex; gap: var(--space-md); justify-content: center;">
+            <button style="flex: 1" class="btn btn-ghost" @onclick="() => ConfirmAction(false)">Cancel</button>
+            <button style="flex: 1" class="btn btn-danger" @onclick="() => ConfirmAction(true)">@confirmationAction</button>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    [Parameter] public string? Path { get; set; }
+
+    private bool _isAdmin;
+    private string? _userId;
+    private string _currentPath = "";
+    private List<string> _folders = new();
+    private List<FileInfo> _files = new();
+    private List<PathSegment> _pathSegments = new();
+
+    private bool _showUpload;
+    private bool _showCreateFolder;
+    private bool _showViewer;
+    private bool _isUploading;
+
+    private List<IBrowserFile> _selectedFiles = new();
+    private string _newFolderName = "";
+    private FileInfo? _viewingFile;
+    
+    // Native Blazor Confirmation Dialog
+    private bool showConfirmationDialog = false;
+    private string confirmationTitle = "";
+    private string confirmationMessage = "";
+    private string confirmationAction = "";
+    private TaskCompletionSource<bool>? confirmationTaskCompletionSource;
+
+    private class PathSegment
+    {
+        public string Name { get; init; } = "";
+        public string Path { get; init; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _isAdmin = authState.User.IsInRole("Admin");
+    }
+
+    protected override void OnParametersSet()
+    {
+        _currentPath = Path ?? "";
+        LoadDirectory();
+    }
+
+    private void LoadDirectory()
+    {
+        var uploadsPath = System.IO.Path.Combine(Environment.WebRootPath, "uploads");
+        var fullPath = System.IO.Path.Combine(uploadsPath, _currentPath);
+
+// Ensure directory exists
+        if (!Directory.Exists(uploadsPath))
+        {
+            Directory.CreateDirectory(uploadsPath);
+        }
+
+        if (!Directory.Exists(fullPath))
+        {
+            Directory.CreateDirectory(fullPath);
+        }
+
+// Load folders and files
+        var dirInfo = new DirectoryInfo(fullPath);
+        _folders = dirInfo.GetDirectories()
+            .Where(d => !d.Name.StartsWith("."))
+            .Select(d => d.Name)
+            .OrderBy(n => n)
+            .ToList();
+
+        _files = dirInfo.GetFiles()
+            .Where(f => !f.Name.StartsWith("."))
+            .OrderBy(f => f.Name)
+            .ToList();
+
+// Build path segments for breadcrumb
+        _pathSegments = new List<PathSegment>();
+        if (!string.IsNullOrEmpty(_currentPath))
+        {
+            var segments = _currentPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var path = "";
+            foreach (var segment in segments)
+            {
+                path = string.IsNullOrEmpty(path) ? segment : $"{path}/{segment}";
+                _pathSegments.Add(new PathSegment { Name = segment, Path = path });
+            }
+        }
+    }
+
+    private void NavigateToFolder(string folderName)
+    {
+        var newPath = string.IsNullOrEmpty(_currentPath)
+            ? folderName
+            : $"{_currentPath}/{folderName}";
+        Navigation.NavigateTo($"/files/{newPath}");
+    }
+
+    private void NavigateToPath(string path)
+    {
+        Navigation.NavigateTo($"/files/{path}");
+    }
+
+    private void NavigateBack()
+    {
+        if (!string.IsNullOrEmpty(_currentPath))
+        {
+            var lastSlash = _currentPath.LastIndexOf('/');
+            var newPath = lastSlash > 0 ? _currentPath.Substring(0, lastSlash) : "";
+            Navigation.NavigateTo(string.IsNullOrEmpty(newPath) ? "/files" : $"/files/{newPath}");
+        }
+    }
+
+    private void NavigateHome()
+    {
+        Navigation.NavigateTo("/files");
+    }
+
+    private void ShowUploadModal()
+    {
+        _showUpload = true;
+        _selectedFiles.Clear();
+    }
+
+    private void CloseUploadModal()
+    {
+        if (!_isUploading)
+        {
+            _showUpload = false;
+            _selectedFiles.Clear();
+        }
+    }
+
+    private void HandleFileSelection(InputFileChangeEventArgs e)
+    {
+        _selectedFiles.AddRange(e.GetMultipleFiles(100).ToList());
+    }
+
+    private async Task UploadFiles()
+    {
+        if (!_selectedFiles.Any() || _isUploading)
+            return;
+
+        _isUploading = true;
+
+        var uploadsPath = System.IO.Path.Combine(Environment.WebRootPath, "uploads");
+        var fullPath = System.IO.Path.Combine(uploadsPath, _currentPath);
+
+        var maxUploadBytes = WeddingOptions.Value.MaxUploadSizeMb * 1024 * 1024;
+        foreach (var file in _selectedFiles)
+        {
+            if (file.Size > maxUploadBytes)
+            {
+                await Js.InvokeVoidAsync("alert", $"File {file.Name} exceeds maximum size of {WeddingOptions.Value.MaxUploadSizeMb}MB");
+                continue;
+            }
+
+            var filePath = System.IO.Path.Combine(fullPath, file.Name);
+            
+            // verify file name so we don't overrite any existing files - append guid for low chances of collision
+            var fi = new FileInfo(filePath);
+            if (fi.Exists)
+            {
+                var uuid = Guid.NewGuid().ToString();
+                filePath = System.IO.Path.Combine(fullPath, uuid + file.Name);
+            }
+
+            try
+            {
+                using var stream = new FileStream(filePath, FileMode.Create);
+                await file.OpenReadStream(WeddingOptions.Value.MaxUploadSizeMb * 1024 * 1024).CopyToAsync(stream);
+            }
+            catch (Exception ex)
+            {
+                await Js.InvokeVoidAsync("alert", $"Error uploading {file.Name}: {ex.Message}");
+            }
+        }
+
+        _isUploading = false;
+        CloseUploadModal();
+        LoadDirectory();
+    }
+
+    private void ShowCreateFolderModal()
+    {
+        _showCreateFolder = true;
+        _newFolderName = "";
+    }
+
+    private void CloseCreateFolderModal()
+    {
+        _showCreateFolder = false;
+        _newFolderName = "";
+    }
+
+    private void CreateFolder()
+    {
+        if (string.IsNullOrWhiteSpace(_newFolderName))
+            return;
+
+        var uploadsPath = System.IO.Path.Combine(Environment.WebRootPath, "uploads");
+        var fullPath = System.IO.Path.Combine(uploadsPath, _currentPath, _newFolderName);
+
+        if (!Directory.Exists(fullPath))
+        {
+            Directory.CreateDirectory(fullPath);
+        }
+
+        LoadDirectory();
+        CloseCreateFolderModal();
+    }
+
+    private bool CanDeleteFolder(string folderName)
+    {
+        var uploadsPath = System.IO.Path.Combine(Environment.WebRootPath, "uploads");
+        var fullPath = System.IO.Path.Combine(uploadsPath, _currentPath, folderName);
+
+        var di = new DirectoryInfo(fullPath);
+        return !di.GetDirectories().Any() && !di.GetFiles().Any();
+    }
+
+    private async void DeleteFolder(string folderName)
+    {
+        var uploadsPath = System.IO.Path.Combine(Environment.WebRootPath, "uploads");
+        var fullPath = System.IO.Path.Combine(uploadsPath, _currentPath, folderName);
+
+        var di = new DirectoryInfo(fullPath);
+        if (di.GetDirectories().Any() || di.GetFiles().Any())
+        {
+            await Js.InvokeVoidAsync("alert", "Folder is not empty, please empty first.");
+            return;
+        }
+
+        di.Delete(true);
+        LoadDirectory();
+    }
+
+    private void ViewFile(FileInfo file)
+    {
+        _viewingFile = file;
+        _showViewer = true;
+    }
+
+    private void CloseViewer()
+    {
+        _showViewer = false;
+        _viewingFile = null;
+    }
+
+    private async Task DeleteFile(FileInfo file)
+    {
+        if (!_isAdmin)
+            return;
+
+        
+        file.Delete();
+        LoadDirectory();
+
+    }
+
+
+    private async Task Download()
+    {
+        if (_viewingFile == null) return;
+        await Js.InvokeVoidAsync("triggerFileDownload", _viewingFile.Name, GetFileUrl(_viewingFile));
+    }
+
+    private string GetFileUrl(FileInfo file)
+    {
+        var relativePath = file.FullName.Replace(Environment.WebRootPath, "").Replace('\\', '/');
+        return relativePath;
+    }
+
+    private bool IsImage(string fileName)
+    {
+        var extensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg" };
+        return extensions.Any(ext => fileName.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsVideo(string fileName)
+    {
+        var extensions = new[] { ".mp4", ".webm", ".mov", ".avi", ".mkv" };
+        return extensions.Any(ext => fileName.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        double len = bytes;
+        var order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+
+        return $"{len:0.##} {sizes[order]}";
+    }
+    
+    // Native Blazor Confirmation Dialog Methods
+    private async Task ConfirmDeleteFile(FileInfo file)
+    {
+        if (!_isAdmin) return;
+
+        var confirmed = await ShowConfirmationAsync(
+            "Confirm Delete", 
+            $"Are you sure you want to delete the file '{file.Name}'? This action cannot be undone.",
+            "Delete"
+        );
+        
+        if (confirmed)
+        {
+            await DeleteFile(file);
+        }
+    }
+    
+    private async Task<bool> ShowConfirmationAsync(string title, string message, string actionText)
+    {
+        confirmationTitle = title;
+        confirmationMessage = message;
+        confirmationAction = actionText;
+        showConfirmationDialog = true;
+        
+        confirmationTaskCompletionSource = new TaskCompletionSource<bool>();
+        StateHasChanged();
+        
+        return await confirmationTaskCompletionSource.Task;
+    }
+
+    private void ConfirmAction(bool confirmed)
+    {
+        showConfirmationDialog = false;
+        confirmationTaskCompletionSource?.SetResult(confirmed);
+        confirmationTaskCompletionSource = null;
+        StateHasChanged();
+    }
+
+}

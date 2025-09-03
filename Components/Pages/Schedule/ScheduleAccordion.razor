@@ -1,0 +1,125 @@
+﻿@using WeddingApp.Components.Pages.Locations
+@using WeddingApp.Data.Schedule
+@rendermode InteractiveServer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<div class="accordion stagger-children">
+    @if (Entries.Any() && Locations.Any())
+    {
+        @foreach (var group in Entries.GroupBy(s => s.LocationId))
+        {
+            <div class="accordion-item @(!hiddenItems.Contains(group.Key) ? "active" : "")" @key="group.Key">
+                <button class="accordion-header" @onclick="() => ToggleItem(group.Key)">
+                    <div>
+                        <span style="font-weight:600;">@(GetLocationName(group.Key))</span>
+                        <span>
+                            @group.Min(e => e.StartTime).ToString("h:mm tt") - @group.Max(e => e.EndTime).ToString("h:mm tt")
+                        </span>
+                        <span style="font-size: var(--text-sm); color: var(--dark-gray); margin-left: var(--space-md);">
+                            (@group.Count() @(group.Count() == 1 ? "item" : "items"))
+                        </span>
+                    </div>
+                    <span class="accordion-icon">▼</span>
+                </button>
+
+                <div class="accordion-content">
+                    <div style="display: flex; gap: var(--space-xl); align-items: flex-start;">
+                        @if (group.Key != null && group.Key != Guid.Empty)
+                        {
+                            <div style="flex: 1 1; ; min-width: 0; position: sticky; margin-top: var(--space-md); height: 100%;">
+                                <LocationCard Location="@GetLocation(group.Key)" IsCompact="false"/>
+                            </div>
+                        }
+                        <div style="flex: 1; min-width: 0; top: var(--space-md);">
+                            @foreach (var entry in group.OrderBy(e => e.StartTime))
+                            {
+                                <div class="glass-card" style="margin-top: var(--space-md);">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-md);">
+                                        <div style="flex: 1;">
+                                            <h4 style="color: var(--primary); margin-bottom: var(--space-sm); font-family: var(--font-display);">
+                                                @entry.Title
+                                            </h4>
+                                            <p style="color: var(--dark-gray); margin-bottom: var(--space-sm); line-height: 1.6;">
+                                                @entry.Description
+                                            </p>
+                                            <div style="display: flex; gap: var(--space-lg); font-size: var(--text-sm); color: var(--dark-gray);">
+                                                <span style="display: flex; align-items: center; gap: var(--space-xs);">
+                                                    @entry.StartTime.ToString("h:mm tt") - @entry.EndTime.ToString("h:mm tt")
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        @if (!IsPublic && (IsAdmin || IsPlanner))
+                                        {
+                                            <div style="display: flex; gap: var(--space-sm); flex-shrink: 0;">
+                                                <button class="btn btn-primary btn-sm" @onclick="() => EditEntry(entry)">
+                                                    Edit
+                                                </button>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="text-center p-4">
+            <p style="color: var(--dark-gray);">No schedule entries yet.</p>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<Location> Locations { get; set; } = new();
+
+    [Parameter] public List<ScheduleEntry> Entries { get; set; } = new();
+
+    [Parameter] public bool IsPublic { get; set; }
+
+    [Parameter] public EventCallback<ScheduleEntry> OnEdit { get; set; }
+
+    private readonly HashSet<Guid?> hiddenItems = new();
+    private bool IsAdmin;
+    private bool IsPlanner;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        IsAdmin = authState.User.IsInRole("Admin");
+        IsPlanner = authState.User.IsInRole("Planner");
+    }
+
+    private string GetLocationName(Guid? locationId)
+    {
+        var location = Locations.FirstOrDefault(l => l.Id == locationId);
+        return location != null ? location.Name : "Other Events";
+    }
+
+    private Location? GetLocation(Guid? locationId)
+    {
+        if (locationId == null) return null;
+
+        return Locations.FirstOrDefault(l => l.Id == locationId);
+    }
+
+    private void ToggleItem(Guid? key)
+    {
+        if (hiddenItems.Contains(key))
+            hiddenItems.Remove(key);
+        else
+            hiddenItems.Add(key);
+    }
+
+    private async Task EditEntry(ScheduleEntry entry)
+    {
+        await OnEdit.InvokeAsync(entry);
+    }
+
+
+}
+

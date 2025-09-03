@@ -1,0 +1,474 @@
+﻿@* Pages/GiftRegistry/Index.razor *@
+@page "/giving"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@using WeddingApp.Data.GiftRegistration
+@attribute [Authorize]
+@inject WeddingDbContext DbContext
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime Js
+@inherits LayoutComponentBase
+
+<PageTitle>Gift Registry</PageTitle>
+
+<div class="animate-fade-in">
+    <h2 class="text-center script-text mb-2 mt-2">Gift Registry</h2>
+
+    <div class="glass-card mb-3">
+        <p class="text-center">
+            Thank you for thinking of us! Below you'll find gift ideas we've registered for.
+            You can tag items you plan to purchase to let others know and avoid the same thing.
+        </p>
+    </div>
+
+    @if (_isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner"></div>
+        </div>
+    }
+    else
+    {
+        <div class="mb-3" style="display: flex; gap: var(--space-md); justify-content: space-between; align-items: center;">
+            <div style="display: flex; gap: var(--space-sm);">
+                <button class="btn @(_showAll ? "btn-ghost" : "btn-primary") btn-sm" @onclick="() => SetFilter(false)">
+                    Available (@_availableCount)
+                </button>
+                <button class="btn @(_showAll ? "btn-primary" : "btn-ghost") btn-sm" @onclick="() => SetFilter(true)">
+                    All Items (@_totalCount)
+                </button>
+            </div>
+            <button class="btn btn-secondary" @onclick="ShowAddModal">
+                + Add Gift Idea
+            </button>
+        </div>
+
+        <div class="tile-container">
+            @foreach (var entry in _filteredEntries)
+            {
+                <div class="tile @(entry.Tags.Any(t => t.UserId == _userId) ? "my-tagged" : "")" style="position: relative;">
+                    @if (entry.Tags.Any())
+                    {
+                        <div style="position: absolute; top: var(--space-md); right: var(--space-md);">
+                            <span class="tag tag-success">
+                                @if (entry.Tags.Count == 1)
+                                {
+                                    @:Tagged
+                                }
+                                else
+                                {
+                                    @:Tagged x@entry.Tags.Count
+                                }
+                            </span>
+                        </div>
+                    }
+
+                    <div class="tile-header">@entry.Description</div>
+
+                    <div class="tile-content">
+                        @if (entry.IsUserCreated)
+                        {
+                            <p style="font-size: var(--text-xs); color: var(--dark-gray); font-style: italic;">
+                                Added by a guest
+                            </p>
+                        }
+
+                        @if (entry.Tags.Any(t => t.UserId == _userId))
+                        {
+                            <p style="color: var(--success); font-weight: 600; margin-top: var(--space-md);">
+                                ✓ You've tagged this item
+                            </p>
+                        }
+                    </div>
+
+                    <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                        @if (!entry.Tags.Any(t => t.UserId == _userId))
+                        {
+                            <button style="flex: 1" class="btn btn-primary btn-sm" @onclick="() => TagItem(entry)">
+                                Tag This Item
+                            </button>
+                        }
+                        else
+                        {
+                            <button style="flex: 1" class="btn btn-ghost btn-sm" @onclick="() => UntagItem(entry)">
+                                Remove Tag
+                            </button>
+                        }
+
+                        @if (entry.Tags.Any() && !entry.Tags.Any(t => t.UserId == _userId))
+                        {
+                            <button style="flex: 1" class="btn btn-ghost btn-sm" @onclick="() => ShowTaggedUsers(entry)">
+                                View Who Tagged
+                            </button>
+                        }
+
+                        @if ((_isAdminOrPlanner || entry.CreatedByUserId == _userId) && entry.IsUserCreated)
+                        {
+                            <button style="flex: 1" class="btn btn-danger btn-sm" @onclick="() => ConfirmDeleteEntry(entry)">
+                                Delete
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Add Gift Modal -->
+@if (_showAddGiftModal)
+{
+    <div class="modal-backdrop" @onclick="CloseAddModal">
+        <div class="modal-content glass-card" @onclick:stopPropagation="true">
+            <h3>Add Gift Idea</h3>
+            <div class="form-group">
+                <textarea class="form-input form-textarea" placeholder=" " @bind="_newGiftDescription" style="min-height: 150px;"></textarea>
+                <label class="form-label">Gift Description</label>
+            </div>
+            <p style="font-size: var(--text-sm); color: var(--dark-gray);">
+                Add something you're planning to give so others can avoid the same thing.
+            </p>
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                <button style="flex: 1" class="btn btn-danger" @onclick="CloseAddModal">Cancel</button>
+                <button style="flex: 1" class="btn btn-secondary" @onclick="SaveNewGift">Add Gift</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Tag Item Modal -->
+@if (_showTagModal)
+{
+    <div class="modal-backdrop" @onclick="CloseTagModal">
+        <div class="modal-content glass-card" @onclick:stopPropagation="true">
+            <h3>Tag This Item</h3>
+            @if (_itemToTag?.Tags.Any() == true)
+            {
+                <div style="background: var(--warning); color: var(--white); padding: var(--space-md); border-radius: var(--radius-md); margin-bottom: var(--space-lg);">
+                    <strong>⚠️ Note:</strong> This item has already been tagged by @_itemToTag.Tags.Count
+                    other @(_itemToTag.Tags.Count == 1 ? "person" : "people").
+                    Are you sure you want to tag it as well?
+                </div>
+            }
+            <div class="form-group">
+                <input type="text" class="form-input" placeholder=" " @bind="_tagComment"/>
+                <label class="form-label">Note (Optional)</label>
+            </div>
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                <button style="flex: 1" class="btn btn-danger" @onclick="CloseTagModal">Cancel</button>
+                <button style="flex: 1" class="btn btn-secondary" @onclick="ConfirmTag">Confirm Tag</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Show Tagged Users Modal -->
+@if (_showUsersModal)
+{
+    <div class="modal-backdrop" @onclick="CloseUsersModal">
+        <div class="modal-content glass-card" @onclick:stopPropagation="true">
+            <h3>People Who Tagged This Item</h3>
+            @if (_selectedEntry != null)
+            {
+                <div style="margin-top: var(--space-lg);">
+                    @foreach (var tag in _selectedEntry.Tags)
+                    {
+                        var person = DbContext.ReservationPeople
+                            .Include(p => p.User)
+                            .FirstOrDefault(p => p.UserId == tag.UserId);
+
+                        <div class="glass-card mb-2" style="padding: var(--space-md);">
+                            <strong>@(person?.Name ?? tag.User?.UserName ?? "Unknown")</strong>
+                            @if (!string.IsNullOrEmpty(person?.Email))
+                            {
+                                <p style="font-size: var(--text-sm); color: var(--dark-gray);">
+                                    📧 @person.Email
+                                </p>
+                            }
+                            @if (!string.IsNullOrEmpty(tag.Comment))
+                            {
+                                <p style="font-size: var(--text-sm); font-style: italic;">
+                                    "@tag.Comment"
+                                </p>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            <div style="display: flex; justify-content: flex-end; margin-top: var(--space-lg);">
+                <button style="flex: 1" class="btn btn-primary" @onclick="CloseUsersModal">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+
+
+<style>
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        animation: fadeIn 0.3s ease;
+    }
+
+    .modal-content {
+        max-width: 700px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+        animation: slideIn 0.3s ease;
+    }
+    
+    @@keyframes slideIn {
+        from { transform: translateY(-20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    .my-tagged {
+        border: 2px solid var(--success);
+        background: linear-gradient(135deg, var(--white) 0%, rgba(156, 175, 136, 0.1) 100%);
+    }
+</style>
+
+<!-- Native Blazor Confirmation Dialog -->
+@if (showConfirmationDialog)
+{
+<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div class="glass-card animate-fade-in" style="width: 90%; max-width: 400px; text-align: center;">
+        <h4 style="color: var(--primary); font-family: var(--font-display); margin-bottom: var(--space-lg);">@confirmationTitle</h4>
+        <p style="color: var(--dark-gray); margin-bottom: var(--space-xl);">@confirmationMessage</p>
+        <div style="display: flex; gap: var(--space-md); justify-content: center;">
+            <button style="flex: 1" class="btn btn-ghost" @onclick="() => ConfirmAction(false)">Cancel</button>
+            <button style="flex: 1" class="btn btn-danger" @onclick="() => ConfirmAction(true)">@confirmationAction</button>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private bool _isAdminOrPlanner = false;
+    private string? _userId;
+    private List<GiftRegisterEntry> _entries = new();
+    private List<GiftRegisterEntry> _filteredEntries = new();
+    private bool _showAll = false;
+    private int _totalCount = 0;
+    private int _availableCount = 0;
+
+    private bool _showAddGiftModal = false;
+    private string _newGiftDescription = "";
+
+    private bool _showTagModal = false;
+    private GiftRegisterEntry? _itemToTag;
+    private string _tagComment = "";
+
+    private bool _showUsersModal = false;
+    private GiftRegisterEntry? _selectedEntry;
+    
+    // Native Blazor Confirmation Dialog
+    private bool showConfirmationDialog = false;
+    private string confirmationTitle = "";
+    private string confirmationMessage = "";
+    private string confirmationAction = "";
+    private TaskCompletionSource<bool>? confirmationTaskCompletionSource;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _isAdminOrPlanner = authState.User.IsInRole("Admin") || authState.User.IsInRole("Planner");
+
+        await LoadEntries();
+    }
+
+    private async Task LoadEntries()
+    {
+        _isLoading = true;
+
+        _entries = await DbContext.GiftRegistryEntries
+            .Include(e => e.Tags)
+            .ThenInclude(t => t.User)
+            .OrderBy(e => e.Description)
+            .ToListAsync();
+
+        _totalCount = _entries.Count;
+        _availableCount = _entries.Count(e => !e.Tags.Any());
+
+        FilterEntries();
+        _isLoading = false;
+    }
+
+    private void FilterEntries()
+    {
+        _filteredEntries = _showAll
+            ? _entries
+            : _entries.Where(e => !e.Tags.Any() || e.Tags.Any(t => t.UserId == _userId)).ToList();
+    }
+
+    private void SetFilter(bool showAll)
+    {
+        _showAll = showAll;
+        FilterEntries();
+    }
+
+    private void ShowAddModal()
+    {
+        _showAddGiftModal = true;
+        _newGiftDescription = "";
+    }
+
+    private void CloseAddModal()
+    {
+        _showAddGiftModal = false;
+        _newGiftDescription = "";
+    }
+
+    private async Task SaveNewGift()
+    {
+        if (string.IsNullOrWhiteSpace(_newGiftDescription))
+            return;
+
+        var entry = new GiftRegisterEntry
+        {
+            Description = _newGiftDescription,
+            IsUserCreated = true
+        };
+
+        DbContext.GiftRegistryEntries.Add(entry);
+        await DbContext.SaveChangesAsync();
+
+        CloseAddModal();
+        await LoadEntries();
+    }
+
+    private void TagItem(GiftRegisterEntry entry)
+    {
+        _itemToTag = entry;
+        _tagComment = "";
+        _showTagModal = true;
+    }
+
+    private void CloseTagModal()
+    {
+        _showTagModal = false;
+        _itemToTag = null;
+        _tagComment = "";
+    }
+
+    private async Task ConfirmTag()
+    {
+        if (_itemToTag == null || string.IsNullOrEmpty(_userId))
+            return;
+
+        if (_itemToTag.Tags.Any(t => t.UserId == _userId))
+        {
+            CloseTagModal();
+            return;
+        }
+
+        if (_itemToTag.Tags.Any())
+        {
+// TODO: Send email notifications to other taggers
+        }
+
+        var tag = new GiftRegisterTag
+        {
+            GiftRegistryEntryId = _itemToTag.Id,
+            UserId = _userId,
+            Comment = _tagComment
+        };
+
+        DbContext.GiftRegistryTags.Add(tag);
+        await DbContext.SaveChangesAsync();
+
+        CloseTagModal();
+        await LoadEntries();
+    }
+
+    private async Task UntagItem(GiftRegisterEntry entry)
+    {
+        if (string.IsNullOrEmpty(_userId))
+            return;
+
+        var tag = entry.Tags.FirstOrDefault(t => t.UserId == _userId);
+        if (tag != null)
+        {
+            DbContext.GiftRegistryTags.Remove(tag);
+            await DbContext.SaveChangesAsync();
+            await LoadEntries();
+        }
+    }
+
+    private void ShowTaggedUsers(GiftRegisterEntry entry)
+    {
+        _selectedEntry = entry;
+        _showUsersModal = true;
+    }
+
+    private void CloseUsersModal()
+    {
+        _showUsersModal = false;
+        _selectedEntry = null;
+    }
+
+    private async Task DeleteEntry(GiftRegisterEntry entry)
+    {
+        if (entry.IsUserCreated && (_isAdminOrPlanner || entry.CreatedByUserId == _userId))
+        {
+            
+                DbContext.GiftRegistryEntries.Remove(entry);
+                await DbContext.SaveChangesAsync();
+                await LoadEntries();
+            
+        }
+    }
+
+    // Native Blazor Confirmation Dialog Methods
+    private async Task ConfirmDeleteEntry(GiftRegisterEntry entry)
+    {
+        if (!(entry.IsUserCreated && (_isAdminOrPlanner || entry.CreatedByUserId == _userId)))
+            return;
+
+        var confirmed = await ShowConfirmationAsync(
+            "Confirm Delete", 
+            $"Are you sure you want to delete the gift idea '{entry.Description}'? This action cannot be undone.",
+            "Delete"
+        );
+        
+        if (confirmed)
+        {
+            await DeleteEntry(entry);
+        }
+    }
+    
+    private async Task<bool> ShowConfirmationAsync(string title, string message, string actionText)
+    {
+        confirmationTitle = title;
+        confirmationMessage = message;
+        confirmationAction = actionText;
+        showConfirmationDialog = true;
+        
+        confirmationTaskCompletionSource = new TaskCompletionSource<bool>();
+        StateHasChanged();
+        
+        return await confirmationTaskCompletionSource.Task;
+    }
+
+    private void ConfirmAction(bool confirmed)
+    {
+        showConfirmationDialog = false;
+        confirmationTaskCompletionSource?.SetResult(confirmed);
+        confirmationTaskCompletionSource = null;
+        StateHasChanged();
+    }
+}

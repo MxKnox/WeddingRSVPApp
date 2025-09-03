@@ -1,0 +1,532 @@
+﻿@page "/admin"
+@rendermode InteractiveServer
+@using WeddingApp.Identity
+@inject UserManager<WeddingAppUser> UserManager
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>User Administration</PageTitle>
+
+<div class="animate-fade-in">
+    <h2 class="text-center script-text mb-2 mt-2">User Management</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-xl);">
+        @if (currentUserRole == Roles.Admin || currentUserRole == Roles.Planner)
+        {
+            <button class="btn btn-primary" @onclick="ShowAddUserModal">
+                <span style="margin-right: 0.5rem;">+</span>Add User
+            </button>
+        }
+    </div>
+
+    @if (_isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner"></div>
+        </div>
+    }
+    else
+    {
+        <div class="tile-container stagger-children">
+            @foreach (var userInfo in userList)
+            {
+                <div class="tile animate-fade-in">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-sm);">
+                        <h3 class="tile-header mb-0">@userInfo.User.Name</h3>
+
+                    </div>
+
+                    <div class="tile-content">
+                        <div class="mb-2">
+                            <strong>Email:</strong><br/>
+                            <small style="color: var(--dark-gray);">@userInfo.User.Email</small>
+                        </div>
+
+                        <div class="mb-2">
+                            <strong>Roles:</strong><br/>
+                            @foreach (var role in userInfo.Roles)
+                            {
+                                <span class="tag @GetRoleTagClass(role)">@role</span>
+                            }
+                        </div>
+
+                        <div class="mb-2">
+                            <strong>External Logins:</strong><br/>
+                            @if (userInfo.ExternalLogins.Any())
+                            {
+                                @foreach (var login in userInfo.ExternalLogins)
+                                {
+                                    <span class="tag">@login.LoginProvider</span>
+                                }
+                            }
+                            else
+                            {
+                                <small style="color: var(--dark-gray);">None</small>
+                            }
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                        @if (CanManageUser(userInfo.User.Id))
+                        {
+                            <button style="flex: 1" class="btn btn-primary btn-sm" @onclick="() => ShowRoleModal(userInfo)">
+                                Manage Roles
+                            </button>
+                        }
+
+                        @if (currentUserRole == Roles.Admin)
+                        {
+                            <button style="flex: 1" class="btn btn-sm btn-danger" @onclick="() => ConfirmDeleteUser(userInfo.User.Id, userInfo.User.UserName)">
+                                Delete User
+                            </button>
+                        }
+                    </div>
+
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Add User Modal -->
+@if (showAddUserModal)
+{
+<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div class="glass-card animate-fade-in" style="width: 90%; max-width: 600px; margin: var(--space-xl);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-lg);">
+            <h4 style="color: var(--primary); font-family: var(--font-display);">Add New User</h4>
+            
+        </div>
+        
+        <div class="form-group">
+            <input type="email" class="form-input" @bind="newUsersName" placeholder=" " />
+            <label class="form-label">Full Name</label>
+        </div>
+        
+        <div class="form-group">
+            <input type="email" class="form-input" @bind="newUsersEmail" placeholder=" " />
+            <label class="form-label">Email Address</label>
+        </div>
+
+        @if (!string.IsNullOrEmpty(addUserError))
+        {
+        <div style="background: var(--danger); color: white; padding: var(--space-md); border-radius: var(--radius-md); margin-bottom: var(--space-md);">
+            @addUserError
+        </div>
+        }
+
+        <div style="display: flex; gap: var(--space-md); justify-content: center;">
+            <button style="flex: 1"  type="button" class="btn btn-danger" @onclick="HideAddUserModal">Cancel</button>
+            <button style="flex: 1"  type="button" class="btn btn-secondary" @onclick="AddUser" disabled="@isAddingUser">
+                @if (isAddingUser)
+                {
+                <span class="spinner" style="width: 1rem; height: 1rem; border-width: 2px; margin-right: var(--space-sm);"></span>
+                }
+                Add User
+            </button>
+        </div>
+    </div>
+</div>
+}
+
+<!-- Role Management Modal -->
+@if (showRoleModal)
+{
+<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div class="glass-card animate-fade-in" style="width: 90%; max-width: 600px; margin: var(--space-xl);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-lg);">
+            <h3 style="color: var(--primary); font-family: var(--font-display);">Manage Roles - @selectedUser?.User.UserName</h3>
+        </div>
+
+        @if (selectedUser != null)
+        {
+        <div style="margin-bottom: var(--space-lg);">
+            <strong>Current Roles:</strong><br/>
+            @foreach (var role in selectedUser.Roles)
+            {
+            <span class="tag @GetRoleTagClass(role)">@role</span>
+            }
+        </div>
+
+        <div style="margin-bottom: var(--space-lg);">
+            <strong>Available Actions:</strong>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: var(--space-sm);">
+            @if (CanManageRole(Roles.Guest))
+            {
+            @if (selectedUser.Roles.Contains("Guest"))
+            {
+            <button class="btn btn-sm" style="background: var(--warning); color: var(--white);" @onclick="() => RemoveUserFromRole(Roles.Guest)">
+                Remove Guest Role
+            </button>
+            }
+            else
+            {
+            <button class="btn btn-sm" style="background: var(--success); color: var(--white);" @onclick="() => AddUserToRole(Roles.Guest)">
+                Add Guest Role
+            </button>
+            }
+            }
+
+            @if (currentUserRole == Roles.Admin)
+            {
+            @if (selectedUser.Roles.Contains("Planner"))
+            {
+            <button class="btn btn-sm" style="background: var(--warning); color: var(--white);" @onclick="() => RemoveUserFromRole(Roles.Planner)">
+                Remove Planner Role
+            </button>
+            }
+            else
+            {
+            <button class="btn btn-sm" style="background: var(--success); color: var(--white);" @onclick="() => AddUserToRole(Roles.Planner)">
+                Add Planner Role
+            </button>
+            }
+
+            @if (selectedUser.Roles.Contains("Admin"))
+            {
+            <button class="btn btn-sm" style="background: var(--warning); color: var(--white);" @onclick="() => RemoveUserFromRole(Roles.Admin)">
+                Remove Admin Role
+            </button>
+            }
+            else
+            {
+            <button class="btn btn-sm" style="background: var(--success); color: var(--white);" @onclick="() => AddUserToRole(Roles.Admin)">
+                Add Admin Role
+            </button>
+            }
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(roleError))
+        {
+        <div style="background: var(--danger); color: white; padding: var(--space-md); border-radius: var(--radius-md); margin-top: var(--space-md);">
+            @roleError
+        </div>
+        }
+        }
+
+        <div style="display: flex; gap: var(--space-md); justify-content: center;">
+            <button style="flex: 1" type="button" class="btn btn-ghost" @onclick="HideRoleModal">Close</button>
+        </div>
+    </div>
+</div>
+}
+
+<!-- Native Blazor Confirmation Dialog -->
+@if (showConfirmationDialog)
+{
+<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+    <div class="glass-card animate-fade-in" style="width: 90%; max-width: 400px; text-align: center;">
+        <h4 style="color: var(--primary); font-family: var(--font-display); margin-bottom: var(--space-lg);">@confirmationTitle</h4>
+        <p style="color: var(--dark-gray); margin-bottom: var(--space-xl);">@confirmationMessage</p>
+        <div style="display: flex; gap: var(--space-md); justify-content: center;">
+            <button style="flex: 1" class="btn btn-ghost" @onclick="() => ConfirmAction(false)">Cancel</button>
+            <button style="flex: 1" class="btn btn-danger" @onclick="() => ConfirmAction(true)">@confirmationAction</button>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    public class UserInfo
+    {
+        public WeddingAppUser User { get; set; } = new();
+        public List<string> Roles { get; set; } = new();
+        public List<UserLoginInfo> ExternalLogins { get; set; } = new();
+    }
+    
+    private bool _isLoading = true;
+    private bool _isAdminOrPlanner;
+    private Roles? currentUserRole = null;
+    
+    private List<WeddingAppUser> _users = new();
+    private List<UserInfo> userList = new();
+    
+    // Add User Modal
+    private bool showAddUserModal = false;
+    private string newUsersEmail = "";
+    private string newUsersName = "";
+    private string addUserError = "";
+    private bool isAddingUser = false;
+
+    // Role Modal
+    private bool showRoleModal = false;
+    private UserInfo? selectedUser = null;
+    private string roleError = "";
+    
+    // Native Blazor Confirmation Dialog
+    private bool showConfirmationDialog = false;
+    private string confirmationTitle = "";
+    private string confirmationMessage = "";
+    private string confirmationAction = "";
+    private TaskCompletionSource<bool>? confirmationTaskCompletionSource;
+    
+    
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _isAdminOrPlanner = authState.User.IsInRole("Admin") || authState.User.IsInRole("Planner");
+
+        if (!_isAdminOrPlanner)
+        {
+            Navigation.NavigateTo("/");
+        }
+        await LoadCurrentUserRole();
+        await LoadUsers();
+    }
+
+    private async Task LoadCurrentUserRole()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.IsInRole(nameof(Roles.Admin)))
+            currentUserRole = Roles.Admin;
+        else if (user.IsInRole(nameof(Roles.Planner)))
+            currentUserRole = Roles.Planner;
+    }
+
+    
+    private async Task LoadUsers()
+    {
+        _isLoading = true;
+        userList.Clear();
+
+        var users = UserManager.Users.ToList();
+        
+        foreach (var user in users)
+        {
+            var userInfo = new UserInfo
+            {
+                User = user,
+                Roles = (await UserManager.GetRolesAsync(user)).ToList(),
+                ExternalLogins = (await UserManager.GetLoginsAsync(user)).ToList()
+            };
+            userList.Add(userInfo);
+        }
+
+        _isLoading = false;
+    }
+    
+    private string GetRoleTagClass(string role) => role switch
+    {
+        nameof(Roles.Admin) => "tag-primary",
+        nameof(Roles.Planner) => "tag-success", 
+        _ => "tag"
+    };
+
+    private bool CanManageUser(string userId)
+    {
+        return currentUserRole is Roles.Admin or Roles.Planner;
+    }
+
+    private bool CanManageRole(Roles role)
+    {
+        if (currentUserRole == Roles.Admin)
+            return true;
+        
+        if (currentUserRole == Roles.Planner && role == Roles.Guest)
+            return true;
+
+        return false;
+    }
+
+    // Add User Modal Methods
+    private void ShowAddUserModal()
+    {
+        showAddUserModal = true;
+        newUsersEmail = "";
+        newUsersName = "";
+        addUserError = "";
+    }
+
+    private void HideAddUserModal()
+    {
+        showAddUserModal = false;
+        newUsersEmail = "";
+        newUsersName = "";
+        addUserError = "";
+    }
+
+    private async Task AddUser()
+    {
+        if (string.IsNullOrEmpty(newUsersEmail))
+        {
+            addUserError = "Email is required.";
+            return;
+        }
+        
+        if (string.IsNullOrEmpty(newUsersName))
+        {
+            addUserError = "Name is required.";
+            return;
+        }
+
+        isAddingUser = true;
+        addUserError = "";
+
+        try
+        {
+            // Check if user already exists
+            var existingUser = await UserManager.FindByEmailAsync(newUsersEmail);
+            if (existingUser != null)
+            {
+                addUserError = "A user with this email already exists.";
+                isAddingUser = false;
+                return;
+            }
+
+            // Create new user
+            var newUser = new WeddingAppUser()
+            {
+                UserName = newUsersEmail,
+                Email = newUsersEmail,
+                EmailConfirmed = true,
+                Name = newUsersName
+            };
+
+            var result = await UserManager.CreateAsync(newUser);
+            if (result.Succeeded)
+            {
+                // Add Guest role to new user
+                await UserManager.AddToRoleAsync(newUser, nameof(Roles.Guest));
+                
+                HideAddUserModal();
+                await LoadUsers(); // Refresh the list
+            }
+            else
+            {
+                addUserError = string.Join(", ", result.Errors.Select(e => e.Description));
+            }
+        }
+        catch (Exception ex)
+        {
+            addUserError = $"Error creating user: {ex.Message}";
+        }
+        finally
+        {
+            isAddingUser = false;
+        }
+    }
+
+    // Role Management Modal Methods
+    private void ShowRoleModal(UserInfo userInfo)
+    {
+        selectedUser = userInfo;
+        showRoleModal = true;
+        roleError = "";
+    }
+
+    private void HideRoleModal()
+    {
+        showRoleModal = false;
+        selectedUser = null;
+        roleError = "";
+    }
+
+    private async Task AddUserToRole(Roles role)
+    {
+        if (selectedUser == null) return;
+
+        try
+        {
+            var result = await UserManager.AddToRoleAsync(selectedUser.User, role.ToString());
+            if (result.Succeeded)
+            {
+                selectedUser.Roles.Add(role.ToString());
+                await LoadUsers(); // Refresh to ensure consistency
+            }
+            else
+            {
+                roleError = string.Join(", ", result.Errors.Select(e => e.Description));
+            }
+        }
+        catch (Exception ex)
+        {
+            roleError = $"Error adding role: {ex.Message}";
+        }
+    }
+
+    private async Task RemoveUserFromRole(Roles role)
+    {
+        if (selectedUser == null) return;
+
+        try
+        {
+            var result = await UserManager.RemoveFromRoleAsync(selectedUser.User, role.ToString());
+            if (result.Succeeded)
+            {
+                selectedUser.Roles.Remove(role.ToString());
+                await LoadUsers(); // Refresh to ensure consistency
+            }
+            else
+            {
+                roleError = string.Join(", ", result.Errors.Select(e => e.Description));
+            }
+        }
+        catch (Exception ex)
+        {
+            roleError = $"Error removing role: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteUser(string userId)
+    {
+        try
+        {
+            var user = await UserManager.FindByIdAsync(userId);
+            if (user != null)
+            {
+                var result = await UserManager.DeleteAsync(user);
+                if (result.Succeeded)
+                {
+                    await LoadUsers(); // Refresh the list
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Handle error - you might want to show this in a notification
+            roleError = $"Error deleting user: {ex.Message}";
+        }
+    }
+    
+    // Native Blazor Confirmation Dialog Methods
+    private async Task ConfirmDeleteUser(string userId, string? userName)
+    {
+        if (currentUserRole != Roles.Admin) return;
+
+        var confirmed = await ShowConfirmationAsync(
+            "Confirm Delete", 
+            $"Are you sure you want to delete user '{userName}'? This action cannot be undone.",
+            "Delete"
+        );
+        
+        if (confirmed)
+        {
+            await DeleteUser(userId);
+        }
+    }
+    
+    private async Task<bool> ShowConfirmationAsync(string title, string message, string actionText)
+    {
+        confirmationTitle = title;
+        confirmationMessage = message;
+        confirmationAction = actionText;
+        showConfirmationDialog = true;
+        
+        confirmationTaskCompletionSource = new TaskCompletionSource<bool>();
+        StateHasChanged();
+        
+        return await confirmationTaskCompletionSource.Task;
+    }
+
+    private void ConfirmAction(bool confirmed)
+    {
+        showConfirmationDialog = false;
+        confirmationTaskCompletionSource?.SetResult(confirmed);
+        confirmationTaskCompletionSource = null;
+        StateHasChanged();
+    }
+
+}

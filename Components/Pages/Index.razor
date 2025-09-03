@@ -1,0 +1,64 @@
+﻿@page "/"
+@inject WeddingDbContext DbContext
+@inject IConfiguration Configuration
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Options
+@using WeddingApp.Data.Schedule
+@using WeddingApp.Options
+@using WeddingApp.Components.Pages.Schedule
+@inherits LayoutComponentBase
+@inject IOptions<WeddingOptions> WeddingOptions;
+
+<PageTitle>@WeddingOptions.Value.BrideName & @WeddingOptions.Value.GroomName - Wedding</PageTitle>
+
+<div class="animate-fade-in">
+    <!-- Hero Section -->
+    <div class="text-center" style="padding: var(--space-md) 0;">
+        <h1 class="script-text" style="font-size: var(--text-4xl); color: var(--primary);">
+            @WeddingOptions.Value.GroomName & @WeddingOptions.Value.BrideName
+            
+        </h1>
+        <p style="font-size: var(--text-xl); color: var(--dark-gray); margin-top: var(--space-md);">
+            Are Getting Married!
+        </p>
+    </div>
+
+    <!-- Countdown Timer -->
+    <CountdownTimer EventDate="WeddingOptions.Value.WeddingDate"/>
+
+    <!-- Schedule Preview -->
+    @* <div class="mt-4"> *@
+    @*     <h2 class="text-center mb-3">Schedule</h2> *@
+    @*     <ScheduleAccordion Entries="@ScheduleEntries" Locations="@Locations" IsPublic="true"/> *@
+    @* </div> *@
+
+    <!-- Call to Action -->
+    <div class="text-center mt-4">
+        <AuthorizeView>
+            <Authorized>
+                <a href="/rsvp" class="btn btn-primary">View Your RSVP</a>
+            </Authorized>
+            <NotAuthorized>
+                <p class="mb-3">Have your invitation code ready?</p>
+                <a href="/account/login" class="btn btn-primary">Login to RSVP</a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</div>
+
+@code {
+    private List<ScheduleEntry> ScheduleEntries { get; set; } = new();
+    private List<Location> Locations { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        ScheduleEntries = await DbContext.ScheduleEntries
+            .OrderBy(s => s.StartTime)
+            .ToListAsync();
+        
+        Locations = await DbContext.Locations
+            .OrderBy(l => l.Name)
+            .ToListAsync();
+    }
+
+}
