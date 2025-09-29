@@ -1,6 +1,10 @@
-﻿services:
+﻿
+services:
   weddingapp:
     image: weddingapp
     build:
-      context: .
-      dockerfile: WeddingApp/Dockerfile
+      context: ./WeddingApp
+      dockerfile: Dockerfile
+      tags:
+        - "ghcr.io/mxknox/weddingrsvpapp:1.0.1"
+        - "ghcr.io/mxknox/weddingrsvpapp:latest"
