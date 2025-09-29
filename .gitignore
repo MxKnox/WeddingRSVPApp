@@ -5,3 +5,7 @@ WeddingApp/bin/
 WeddingAppTests/obj/
 WeddingAppTests/bin/
 
+
+WeddingApp/wwwroot/uploads/
+
+WeddingApp/Data/app.db

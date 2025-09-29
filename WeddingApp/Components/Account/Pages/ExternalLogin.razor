@@ -1,6 +1,8 @@
 ﻿@page "/Account/ExternalLogin"
+@using System.Net
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
+@using WeddingApp.Data.Reservations
 @using WeddingApp.Extensions
 @using WeddingApp.Identity
 
@@ -184,16 +186,63 @@
                     .OrderByDescending(x => x.similarity)
                     .FirstOrDefault();
 
-                if (closestMatch == null)
+                if (closestMatch != null)
                 {
-                    // still null, send them to the rsvp page so they can open a reservation and associate it with their user
-                    RedirectManager.RedirectTo($"rsvp");
+                    reservationPerson = closestMatch.reservationPerson;
+                    // Find any users without an email set and set this user as the first
                 }
+                else
+                {
+                    //create a new person for this user and assign them.
+                    // if the returnUrl has a valid code, create a new person in that reservation.
+                    if (!String.IsNullOrWhiteSpace(ReturnUrl))
+                    {
+                        var returnUrlParts = ReturnUrl.Split("/");
+                        if (returnUrlParts.Any(p => String.Equals(p, "rsvp", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            // reservation code should be last bit if it's valid
+                            var reservationCode = returnUrlParts.Last();
+                            var foundReservation = await DbContext.Reservations.FirstOrDefaultAsync(r => r.RegistrationToken == reservationCode);
+                            if (foundReservation == null)
+                            {
+                                RedirectManager.RedirectTo($"rsvp");
+                                return;
+                            }
+                            // create a new reservationPerson
+                            reservationPerson = new ReservationPerson()
+                            {
+                                ReservationId = foundReservation.Id,
+                                Name = nameFromProvider,
+                                Email = emailFromProvider,
+                                IsPrimaryGuest = false,
+                                UserId = user.Id
+                            };
+                            
+                            // make them the primary if no others are registered against that reservation yet
+                            var primaryPerson = await DbContext.ReservationPeople.FirstOrDefaultAsync(rp => rp.ReservationId == foundReservation.Id && rp.IsPrimaryGuest);
+                            if (primaryPerson is not null && primaryPerson.UserId == null)
+                            {
+                                primaryPerson.IsPrimaryGuest = false;
+                                reservationPerson.IsPrimaryGuest = true;
+                            }
 
-                reservationPerson = closestMatch.reservationPerson;
+
+                            await DbContext.ReservationPeople.AddAsync(reservationPerson);
+                        }
+                    }
+                    else
+                    {
+                        RedirectManager.RedirectTo($"rsvp");
+                        return;
+                    }
+                    
+                }
+                
             }
-            
             // Have identified an unmatched reservationPerson, attach it and add the user to the Guests role
+            reservationPerson.PreferredName = reservationPerson.Name;
+            reservationPerson.Name = nameFromProvider;
+            reservationPerson.Email = emailFromProvider;
             reservationPerson.UserId = user.Id;
             await DbContext.SaveChangesAsync();
             
@@ -203,13 +252,16 @@
         
         var reservation = DbContext.Reservations.FirstOrDefault(r => r.Id == reservationPerson.ReservationId);
 
-        if (reservation == null)
+        if (reservation != null)
         {
-            RedirectManager.RedirectTo(String.IsNullOrWhiteSpace(ReturnUrl) ? "/rsvp" : ReturnUrl );
+            // reservationPerson should not be null here anymore.
+            RedirectManager.RedirectTo($"rsvp/{reservation.RegistrationToken}");
+            return;
         }
         
-        // reservationPerson should not be null here anymore.
-        RedirectManager.RedirectTo($"rsvp/{reservation.RegistrationToken}");
+        RedirectManager.RedirectTo(String.IsNullOrWhiteSpace(ReturnUrl) ? "/rsvp" : ReturnUrl );
+        
+
     }
     
 

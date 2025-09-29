@@ -6,13 +6,14 @@
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IConfiguration Configuration
 @inject IOptions<WeddingOptions> WeddingOptions;
+@using System.Net
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.Extensions.Options
 @using WeddingApp.Data.Reservations
 @using WeddingApp.Options
 @inherits LayoutComponentBase
-
+@inject NavigationManager NavigationManager;
 
 <PageTitle>RSVP - @RegistrationToken</PageTitle>
 
@@ -57,9 +58,10 @@
                         disabled="@(!CanEdit)">
                     ✓ Yes, I'll be there!
                 </button>
-                <button class="btn @(Reservation.Status != ReservationStatus.NotAttending ? "btn-danger-ghost" : "btn-danger")"
-                        @onclick="() => UpdateAttendance(false)"
-                        disabled="@(!CanEdit)">
+                <button
+                    class="btn @(Reservation.Status != ReservationStatus.NotAttending ? "btn-danger-ghost" : "btn-danger")"
+                    @onclick="() => UpdateAttendance(false)"
+                    disabled="@(!CanEdit)">
                     ✗ Sorry, can't make it
                 </button>
             </div>
@@ -68,7 +70,8 @@
 
         <!-- Guest List -->
         <div class="glass-card mb-3">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-lg);">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-lg);">
                 <h3>Guest Information</h3>
                 @if (CanEdit && Reservation.People.Count < Reservation.MaxGuests)
                 {
@@ -83,13 +86,24 @@
                         @if (EditingPersonId == person.Id)
                         {
                             <!-- Edit Mode -->
+
                             <div class="form-group">
-                                <input type="text" class="form-input" @bind="EditPerson.Name"/>
-                                <label class="form-label">Name</label>
+                                <input type="text" class="form-input" disabled="@(person.UserId != null)" @bind="EditPerson.Name"/>
+                                <label class="form-label">@((person.UserId == null) ? "Name" : "Name (from login)")</label>
                             </div>
+                            
+                            @if (person.UserId != null)
+                            {
+                                <div class="form-group">
+                                    <input type="text" class="form-input" @bind="EditPerson.PreferredName"/>
+                                    <label class="form-label">Preferred Name</label>
+                                </div>
+                            }
+                            
                             <div class="form-group">
-                                <input type="email" class="form-input" @bind="EditPerson.Email"/>
-                                <label class="form-label">Email</label>
+                                <input type="email" class="form-input" disabled="@(person.UserId != null)"
+                                       @bind="EditPerson.Email"/>
+                                <label class="form-label">@((person.UserId == null) ? "Email" : "Email (from login)")</label>
                             </div>
                             <div class="form-group">
                                 <InputCheckbox @bind-Value=EditPerson.Over18></InputCheckbox>
@@ -104,14 +118,18 @@
                                 <div class="form-group">
                                     <InputTextArea class="form-input form-textarea"
                                                    @bind-Value="EditPerson.DietaryRequirementsDescription">
-                                                
+
                                     </InputTextArea>
                                     <label class="form-label">Dietary Requirements</label>
                                 </div>
                             }
-                        <div style="display: flex; gap: var(--space-md); justify-content: center;">
-                                <button style="flex: 1" class="btn btn-secondary btn-sm" @onclick="() => UpdatePerson(person)">Save</button>
-                                <button style="flex: 1" class="btn btn-danger btn-sm" @onclick="CancelEdit">Cancel</button>
+
+                            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                                <button style="flex: 1" class="btn btn-secondary btn-sm"
+                                        @onclick="() => UpdatePerson(person)">Save
+                                </button>
+                                <button style="flex: 1" class="btn btn-danger btn-sm" @onclick="CancelEdit">Cancel
+                                </button>
                             </div>
                         }
                         else
@@ -125,21 +143,24 @@
                                 }
                             </div>
                             <div class="tile-content">
-                                    
+
                                 <div class="form-group">
-                                    <InputCheckbox @bind-Value=person.Over18 @bind-Value:after="() => SavePerson(person)"></InputCheckbox>
+                                    <InputCheckbox @bind-Value=person.Over18
+                                                   @bind-Value:after="() => SavePerson(person)"></InputCheckbox>
                                     <label class="form-label">Over 18</label>
                                 </div>
                                 <div class="form-group">
-                                    <InputCheckbox @bind-Value=person.DietaryRequirements @bind-Value:after="() => SavePerson(person)"></InputCheckbox>
+                                    <InputCheckbox @bind-Value=person.DietaryRequirements
+                                                   @bind-Value:after="() => SavePerson(person)"></InputCheckbox>
                                     <label class="form-label">Dietary Requirements?</label>
                                 </div>
                                 @if (@person.DietaryRequirements)
                                 {
                                     <div class="form-group">
-                                        <InputTextArea class="form-input form-textarea" @bind-Value:after="() => SavePerson(person)"
+                                        <InputTextArea class="form-input form-textarea"
+                                                       @bind-Value:after="() => SavePerson(person)"
                                                        @bind-Value="person.DietaryRequirementsDescription">
-                                                
+
                                         </InputTextArea>
                                         <label class="form-label">Dietary Requirements</label>
                                     </div>
@@ -147,11 +168,15 @@
                             </div>
                             @if (CanEdit)
                             {
-                        <div style="display: flex; gap: var(--space-md); justify-content: center;">
-                                    <button style="flex: 1" class="btn btn-primary btn-sm" @onclick="() => EditGuest(person)">Edit</button>
+                                <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                                    <button style="flex: 1" class="btn btn-primary btn-sm"
+                                            @onclick="() => EditGuest(person)">Edit
+                                    </button>
                                     @if (!person.IsPrimaryGuest)
                                     {
-                                        <button style="flex: 1" class="btn btn-danger btn-sm" @onclick="() => ConfirmDeleteGuest(person)">Remove</button>
+                                        <button style="flex: 1" class="btn btn-danger btn-sm"
+                                                @onclick="() => ConfirmDeleteGuest(person)">Remove
+                                        </button>
                                     }
                                 </div>
                             }
@@ -167,25 +192,31 @@
             <div class="glass-card text-center">
                 <h3>Save Your RSVP</h3>
                 <p>Create an account to access the gift registry and photo sharing!</p>
-                <a href="/account/register" class="btn btn-primary mt-2">Create Account</a>
+                @{
+                    var returnUrl = $"/account/Register?returnUrl={WebUtility.UrlEncode(NavigationManager.ToBaseRelativePath(NavigationManager.Uri))}";
+
+                    <a href="@returnUrl" class="btn btn-primary mt-2">Create Account</a>
+                }
             </div>
         }
     }
 </div>
 
-!-- Native Blazor Confirmation Dialog -->
+<!-- Native Blazor Confirmation Dialog -->
 @if (showConfirmationDialog)
 {
-<div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-    <div class="glass-card animate-fade-in" style="width: 90%; max-width: 400px; text-align: center;">
-        <h4 style="color: var(--primary); font-family: var(--font-display); margin-bottom: var(--space-lg);">@confirmationTitle</h4>
-        <p style="color: var(--dark-gray); margin-bottom: var(--space-xl);">@confirmationMessage</p>
-        <div style="display: flex; gap: var(--space-md); justify-content: center;">
-            <button style="flex: 1" class="btn btn-ghost" @onclick="() => ConfirmAction(false)">Cancel</button>
-            <button style="flex: 1" class="btn btn-danger" @onclick="() => ConfirmAction(true)">@confirmationAction</button>
+    <div
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div class="glass-card animate-fade-in" style="width: 90%; max-width: 400px; text-align: center;">
+            <h4 style="color: var(--primary); font-family: var(--font-display); margin-bottom: var(--space-lg);">@confirmationTitle</h4>
+            <p style="color: var(--dark-gray); margin-bottom: var(--space-xl);">@confirmationMessage</p>
+            <div style="display: flex; gap: var(--space-md); justify-content: center;">
+                <button style="flex: 1" class="btn btn-ghost" @onclick="() => ConfirmAction(false)">Cancel</button>
+                <button style="flex: 1" class="btn btn-danger"
+                        @onclick="() => ConfirmAction(true)">@confirmationAction</button>
+            </div>
         </div>
     </div>
-</div>
 }
 
 @code {
@@ -200,7 +231,7 @@
     private Reservation? Reservation;
     private Guid? EditingPersonId;
     private ReservationPerson EditPerson = new();
-    
+
     // Native Blazor Confirmation Dialog
     private bool showConfirmationDialog = false;
     private string confirmationTitle = "";
@@ -288,7 +319,8 @@
     {
         DbContext.ReservationPeople.Update(person);
         await DbContext.SaveChangesAsync();
-    } 
+    }
+
     private async Task UpdatePerson(ReservationPerson person)
     {
         person.Name = EditPerson.Name;
@@ -296,7 +328,7 @@
         person.Phone = EditPerson.Phone;
         person.Address = EditPerson.Address;
         person.DietaryRequirements = EditPerson.DietaryRequirements;
-        
+
         if (DbContext.ReservationPeople.Any(rp => rp.Id == person.Id))
         {
             DbContext.ReservationPeople.Update(person);
@@ -334,32 +366,32 @@
             await DbContext.SaveChangesAsync();
         }
     }
-    
+
     // Native Blazor Confirmation Dialog Methods
     private async Task ConfirmDeleteGuest(ReservationPerson person)
     {
         var confirmed = await ShowConfirmationAsync(
-            "Confirm Delete", 
+            "Confirm Delete",
             $"Are you sure you want to delete the guest '{person.Name}'? This action cannot be undone.",
             "Delete"
         );
-        
+
         if (confirmed)
         {
             await RemoveGuest(person);
         }
     }
-    
+
     private async Task<bool> ShowConfirmationAsync(string title, string message, string actionText)
     {
         confirmationTitle = title;
         confirmationMessage = message;
         confirmationAction = actionText;
         showConfirmationDialog = true;
-        
+
         confirmationTaskCompletionSource = new TaskCompletionSource<bool>();
         StateHasChanged();
-        
+
         return await confirmationTaskCompletionSource.Task;
     }
 

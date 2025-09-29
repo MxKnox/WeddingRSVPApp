@@ -843,6 +843,26 @@ h6 {
     gap: var(--space-xl);
 }
 
+
+.socialLoginButton {
+    cursor:pointer;
+    color:transparent;
+    border:none;
+    width:96px;
+    height:96px;
+    align-content: center;
+}
+
+.socialLoginButton.facebook {
+    background:url(/content/images/gui/facebook.png);
+}
+.socialLoginButton.google {
+    background:url(/content/images/gui/google.png);
+}
+.socialLoginButton.microsoft {
+    background:url(/content/images/gui/microsoft.png);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .navbar-menu {

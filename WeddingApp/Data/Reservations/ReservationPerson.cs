@@ -9,7 +9,8 @@ public class ReservationPerson : BaseEntity
     public string? UserId { get; set; }
 
     [Required] [StringLength(100)] public string Name { get; set; } = string.Empty;
-
+    
+    [StringLength(100)] public string PreferredName { get; set; } = string.Empty;
     [EmailAddress] [StringLength(100)] public string? Email { get; set; }
 
     [Phone] [StringLength(20)] public string? Phone { get; set; }

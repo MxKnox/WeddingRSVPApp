@@ -1,5 +1,6 @@
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
-USER WeddingApp
+
+USER app
 WORKDIR /app
 EXPOSE 80
 EXPOSE 443
