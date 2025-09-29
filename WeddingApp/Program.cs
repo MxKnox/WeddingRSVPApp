@@ -13,7 +13,7 @@ namespace WeddingApp;
 
 public class Program
 {
-    private static async Task Main(string[] args)
+    private static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
         
@@ -156,9 +156,9 @@ public class Program
 // Add additional endpoints required by the Identity /Account Razor components.
         app.MapAdditionalIdentityEndpoints();
 
-        await app.SeedIdentity();
+        app.SeedIdentity().GetAwaiter().GetResult();
 
-        await app.RunAsync();
+        app.RunAsync().GetAwaiter().GetResult();
         
     }
 }

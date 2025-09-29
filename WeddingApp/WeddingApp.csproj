@@ -23,10 +23,5 @@
             <Link>.dockerignore</Link>
         </Content>
     </ItemGroup>
-
-    <ItemGroup>
-      <_ContentIncludedByDefault Remove="Components\Admin\AdminArea.cshtml" />
-      <_ContentIncludedByDefault Remove="Components\Admin\AdminArea.razor" />
-    </ItemGroup>
-
+    
 </Project>

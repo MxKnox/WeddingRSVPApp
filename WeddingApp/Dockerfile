@@ -1,5 +1,5 @@
-﻿FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
-USER $APP_UID
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
+USER WeddingApp
 WORKDIR /app
 EXPOSE 80
 EXPOSE 443
@@ -7,7 +7,7 @@ EXPOSE 443
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY ["WeddingApp.csproj", "WeddingApp/"]
+COPY ["/", "WeddingApp/"]
 RUN dotnet restore "WeddingApp/WeddingApp.csproj"
 COPY . .
 WORKDIR "/src/WeddingApp"
