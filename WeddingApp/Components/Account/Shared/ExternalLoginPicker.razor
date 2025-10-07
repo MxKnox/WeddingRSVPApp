@@ -20,7 +20,7 @@
     {
         <form class="form-horizontal text-center" style="align-content: center" action="Account/PerformExternalLogin"
               method="post">
-            <div style="display: inline-flex;">
+            <div style="display: inline-flex; flex-wrap: wrap">
                 <AntiforgeryToken/>
                 <input type="hidden" name="ReturnUrl" value="@ReturnUrl"/>
                 @foreach (var p in externalLogins)

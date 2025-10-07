@@ -863,54 +863,41 @@ h6 {
     background:url(/content/images/gui/microsoft.png);
 }
 
-/* --- Mobile Navbar Dropdown --- */
-@media (max-width: 768px) {
-    .navbar {
-        position: relative;
+/* base */
+.nav-toggle{ display:none; }
+.hamburger{ display:none; }
+
+@media (max-width:768px){
+    .navbar-content{ position:relative; padding-block: var(--space-sm); }
+    .hamburger{
+        display:inline-flex; margin-left:auto; width:36px; height:28px;
+        flex-direction:column; justify-content:center; gap:6px; cursor:pointer;
+    }
+    .hamburger span{
+        display:block; height:2px; width:100%; background:var(--primary);
+        border-radius:2px; transition:transform .25s, opacity .25s;
     }
 
-    /* Hide the menu by default */
-    .navbar-menu {
-        display: none;
-        flex-direction: column;
-        position: absolute;
-        top: 100%;
-        right: 0;
-        background: var(--white);
-        width: 100%;
-        box-shadow: var(--shadow-md);
-        border-top: 1px solid var(--medium-gray);
-        padding: var(--space-md) 0;
-        z-index: 99;
+    .navbar-brand{
+        max-width:calc(100% - 48px - var(--space-md));
+        overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
     }
 
-    /* Show toggle button (the hamburger icon) */
-    .navbar-content::before {
-        content: "☰";
-        font-size: 1.5rem;
-        color: var(--primary);
-        cursor: pointer;
-        margin-left: auto;
+    .navbar-menu{
+        position:absolute; top:100%; left:0; right:0;
+        background:var(--white); border-top:1px solid var(--medium-gray);
+        box-shadow:var(--shadow-md);
+        display:flex; flex-direction:column; gap:0;
+        max-height:0; overflow:hidden; transition:max-height .3s ease;
+        z-index:101;
     }
+    .navbar-menu li{ border-bottom:1px solid var(--medium-gray); }
+    .navbar-menu li:last-child{ border-bottom:0; }
+    .navbar-menu a, .navbar-menu form{ display:block; padding:var(--space-md) var(--space-xl); }
 
-    /* When the menu is toggled open */
-    .navbar:focus-within .navbar-menu,
-    .navbar:hover .navbar-menu {
-        display: flex;
-    }
+    .nav-toggle:checked ~ .navbar-menu{ max-height:80vh; }
 
-    /* Adjust links for vertical layout */
-    .navbar-menu li {
-        text-align: center;
-        padding: var(--space-sm) 0;
-    }
-
-    .navbar-link {
-        display: inline-block;
-        padding: var(--space-sm) var(--space-md);
-    }
-
-    .navbar-brand {
-        flex-grow: 1;
-    }
+    .nav-toggle:checked + .hamburger span:nth-child(1){ transform:translateY(8px) rotate(45deg); }
+    .nav-toggle:checked + .hamburger span:nth-child(2){ opacity:0; }
+    .nav-toggle:checked + .hamburger span:nth-child(3){ transform:translateY(-8px) rotate(-45deg); }
 }
