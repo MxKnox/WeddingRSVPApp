@@ -10,10 +10,14 @@
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
 @using Microsoft.Extensions.Options
+@using WeddingApp.Components.Account
 @using WeddingApp.Data.Reservations
+@using WeddingApp.Extensions
+@using WeddingApp.Identity
 @using WeddingApp.Options
 @inherits LayoutComponentBase
 @inject NavigationManager NavigationManager;
+@inject UserManager<WeddingAppUser> UserManager
 
 <PageTitle>RSVP - @RegistrationToken</PageTitle>
 
@@ -83,15 +87,55 @@
                 @foreach (var person in Reservation.People)
                 {
                     <div class="tile">
+                        <div class="tile-header">
+                            @if (String.IsNullOrWhiteSpace(person.PreferredName))
+                            {
+                                @person.Name
+                            }
+                            else
+                            {
+                                @person.PreferredName
+                            }
+                            @if (person.IsPrimaryGuest)
+                            {
+                                <span class="tag tag-primary" style="margin-left: var(--space-sm);">Primary</span>
+                            }
+                        </div>
                         @if (EditingPersonId == person.Id)
                         {
                             <!-- Edit Mode -->
-
+                            @if (IsAdmin)
+                            {
+                                <div class="form-group">
+                                    <select class="form-input" @bind="EditPerson.UserId">
+                                        <option value="" checked="@(EditPerson!.UserId == null)">
+                                            No assigned user...
+                                        </option>
+                                        @foreach (var selectableUser in GetSelectableUsers(EditPerson.UserId))
+                                        {
+                                            <option value="@selectableUser.Id" checked="@(EditPerson!.UserId == selectableUser.Id)">
+                                                @selectableUser.Name - (@selectableUser.Email)
+                                            </option>
+                                        }
+                                    </select>
+                                    <label class="form-label">Assigned User</label>
+                                </div>
+                                
+                            }
+                            @if (IsAdmin || IsPlanner)
+                            {
+                                <div class="form-group">
+                                    <input type="checkbox" class="form-input" @bind="EditPerson.IsPrimaryGuest"/>
+                                    <label class="form-label">Primary </label>
+                                </div>
+                            }
                             <div class="form-group">
-                                <input type="text" class="form-input" disabled="@(person.UserId != null)" @bind="EditPerson.Name"/>
-                                <label class="form-label">@((person.UserId == null) ? "Name" : "Name (from login)")</label>
+                                <input type="text" class="form-input" disabled="@(person.UserId != null)"
+                                       @bind="EditPerson.Name"/>
+                                <label
+                                    class="form-label">@((person.UserId == null) ? "Name" : "Name (from login)")</label>
                             </div>
-                            
+
                             @if (person.UserId != null)
                             {
                                 <div class="form-group">
@@ -99,18 +143,21 @@
                                     <label class="form-label">Preferred Name</label>
                                 </div>
                             }
-                            
+
                             <div class="form-group">
-                                <input type="email" class="form-input" disabled="@(person.UserId != null)"
-                                       @bind="EditPerson.Email"/>
-                                <label class="form-label">@((person.UserId == null) ? "Email" : "Email (from login)")</label>
+                                <input type="email" class="form-input" 
+                                       @bind="EditPerson.Email" disabled="@(EditPerson.UserId != null)"/>
+                                
+                                <label class="form-label">@(EditPerson.UserId == null ? "Email" : "Email (from login)")</label>
                             </div>
+                            
+
                             <div class="form-group">
-                                <InputCheckbox @bind-Value=EditPerson.Over18></InputCheckbox>
+                                <input type="checkbox" class="form-input" @bind="EditPerson.Over18"/>
                                 <label class="form-label">Over 18</label>
                             </div>
                             <div class="form-group">
-                                <InputCheckbox @bind-Value=EditPerson.DietaryRequirements></InputCheckbox>
+                                <input type="checkbox" class="form-input" @bind="EditPerson.DietaryRequirements"/>
                                 <label class="form-label">Dietary Requirements?</label>
                             </div>
                             @if (@EditPerson.DietaryRequirements)
@@ -135,22 +182,15 @@
                         else
                         {
                             <!-- Display Mode -->
-                            <div class="tile-header">
-                                @person.Name
-                                @if (person.IsPrimaryGuest)
-                                {
-                                    <span class="tag tag-primary" style="margin-left: var(--space-sm);">Primary</span>
-                                }
-                            </div>
                             <div class="tile-content">
 
                                 <div class="form-group">
-                                    <InputCheckbox @bind-Value=person.Over18
+                                    <InputCheckbox class="form-input" @bind-Value=person.Over18
                                                    @bind-Value:after="() => SavePerson(person)"></InputCheckbox>
                                     <label class="form-label">Over 18</label>
                                 </div>
                                 <div class="form-group">
-                                    <InputCheckbox @bind-Value=person.DietaryRequirements
+                                    <InputCheckbox class="form-input" @bind-Value=person.DietaryRequirements
                                                    @bind-Value:after="() => SavePerson(person)"></InputCheckbox>
                                     <label class="form-label">Dietary Requirements?</label>
                                 </div>
@@ -220,14 +260,18 @@
 }
 
 @code {
+
     [Parameter] public string RegistrationToken { get; set; } = "";
 
     private bool IsLoading = true;
     private bool IsAuthenticated;
-    private bool IsAdminOrPlanner;
+    private bool IsAdmin;
+    private bool IsPlanner;
     private bool HasAccess;
     private bool CanEdit;
     private string? UserId;
+    private string? usersRegisteredName;
+    private string? EmailFromProvider;
     private Reservation? Reservation;
     private Guid? EditingPersonId;
     private ReservationPerson EditPerson = new();
@@ -244,7 +288,19 @@
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         IsAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
         UserId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        IsAdminOrPlanner = authState.User.IsInRole("Admin") || authState.User.IsInRole("Planner");
+        if (UserId != null)
+        {
+            var user = await UserManager.FindByIdAsync(UserId);
+            if (user != null)
+            {
+                usersRegisteredName = user.Name;
+            }
+            
+            EmailFromProvider = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+        }
+
+        IsAdmin = authState.User.IsInRole("Admin");
+        IsPlanner = authState.User.IsInRole("Planner");
 
         await LoadReservation();
     }
@@ -255,26 +311,118 @@
             .Include(r => r.People)
             .FirstOrDefaultAsync(r => r.RegistrationToken == RegistrationToken);
 
-        if (Reservation != null)
+        if (Reservation == null)
         {
-            if (!IsAuthenticated)
-            {
-                HasAccess = true; // Anonymous users can view with token
-                CanEdit = true;
-            }
-            else if (IsAdminOrPlanner)
-            {
-                HasAccess = true;
-                CanEdit = true;
-            }
-            else if (!string.IsNullOrEmpty(UserId))
-            {
-                HasAccess = Reservation.People.Any(p => p.UserId == UserId);
-                CanEdit = HasAccess;
-            }
+            NavigationManager.NavigateTo("/rsvp");
         }
 
+
+        if (!IsAuthenticated)
+        {
+            HasAccess = true; // Anonymous users can view with token
+            CanEdit = true;
+        }
+        else if (IsAdmin || IsPlanner)
+        {
+            HasAccess = true;
+            CanEdit = true;
+        }
+        else if (!string.IsNullOrEmpty(UserId))
+        {
+            // if the user has no reservation person try match one from the current users
+            // Try find Guest entry for that email
+            var reservationPerson = DbContext.ReservationPeople.FirstOrDefault(rp => rp.UserId == UserId);
+
+            // find a reservation to attach to this user.
+            if (reservationPerson == null)
+            {
+                // find any exact matches not yet assigned.
+                reservationPerson = Reservation.People.FirstOrDefault(rp =>
+                    rp.UserId == null
+                    && (rp.Email == EmailFromProvider || rp.Name == usersRegisteredName)
+                );
+
+                if (reservationPerson is not null)
+                {
+                    reservationPerson.PreferredName = reservationPerson.Name;
+                    reservationPerson.Name = usersRegisteredName;
+                    
+                    reservationPerson.Email = EmailFromProvider;
+                    await DbContext.SaveChangesAsync();
+                }
+                else
+                {
+                    // try fuzzy find using levenshtein if not found
+                    var unassignedPersons = Reservation.People
+                        .Where(rp => rp.UserId == null)
+                        .ToList();
+
+                    var closestMatch = unassignedPersons
+                        .Where(x => x.UserId == null)
+                        .Select(rp => new
+                        {
+                            reservationPerson = rp,
+                            distance = rp.Name.LevenshteinDistance(usersRegisteredName),
+                            similarity = 1.0 - (double)rp.Name.LevenshteinDistance(usersRegisteredName) /
+                                Math.Max(usersRegisteredName.Length, rp.Name.Length)
+                        })
+                        .Where(x => x.similarity > 0.6) // 60% similarity threshold
+                        .OrderByDescending(x => x.similarity)
+                        .FirstOrDefault();
+
+                    if (closestMatch != null)
+                    {
+                        reservationPerson = closestMatch.reservationPerson;
+                        reservationPerson.UserId = UserId;
+                        reservationPerson.PreferredName = reservationPerson.Name;
+                        reservationPerson.Name = usersRegisteredName;
+                        reservationPerson.Email = EmailFromProvider;
+
+                        // Find any users without an email set and set this user as the first
+                    }
+                    else // add the user as a new reservation person
+                    {
+                        reservationPerson = new ReservationPerson()
+                        {
+                            ReservationId = Reservation.Id,
+                            Name = usersRegisteredName,
+                            Email = EmailFromProvider,
+                            IsPrimaryGuest = false,
+                            UserId = UserId
+                        };
+                        
+                        await DbContext.ReservationPeople.AddAsync(reservationPerson);
+                    }
+                    await DbContext.SaveChangesAsync();
+                }
+                
+                
+                // make them the primary if no others are registered against that reservation yet
+                var primaryPerson = Reservation.People.FirstOrDefault(rp => rp.IsPrimaryGuest);
+                if (primaryPerson is not null && primaryPerson.UserId == null)
+                {
+                    primaryPerson.IsPrimaryGuest = false;
+                    reservationPerson.IsPrimaryGuest = true;
+                }
+                
+                await DbContext.SaveChangesAsync();
+            }
+            
+            HasAccess = (reservationPerson.ReservationId == Reservation.Id);
+            CanEdit = HasAccess;
+        }
+
+        
+
+
         IsLoading = false;
+    }
+
+    private List<WeddingAppUser> GetSelectableUsers(string? userId = null)
+    {
+        return DbContext.Users
+            .Where(u => !DbContext.ReservationPeople.Any(rp => rp.UserId == u.Id) || u.Id == userId)
+            .ToList();
     }
 
     private async Task UpdateAttendance(bool isAttending)
@@ -307,11 +455,17 @@
         EditingPersonId = person.Id;
         EditPerson = new ReservationPerson
         {
+            UserId = person.UserId,
+            IsPrimaryGuest = person.IsPrimaryGuest,
             Name = person.Name,
+            PreferredName = person.PreferredName,
             Email = person.Email,
             Phone = person.Phone,
             Address = person.Address,
-            DietaryRequirements = person.DietaryRequirements
+            Over18 = person.Over18,
+            DietaryRequirements = person.DietaryRequirements,
+            DietaryRequirementsDescription = person.DietaryRequirementsDescription
+                
         };
     }
 
@@ -323,11 +477,42 @@
 
     private async Task UpdatePerson(ReservationPerson person)
     {
+        // get additional values if the Userid is not null
+        if (String.IsNullOrWhiteSpace(EditPerson.UserId))
+        {
+            EditPerson.UserId = null;
+        }
+        if (person.UserId != EditPerson.UserId)
+        {
+            var user = await UserManager.FindByIdAsync(EditPerson.UserId);
+            if (user != null)
+            {
+                // copy name into preffered name
+                if (String.IsNullOrWhiteSpace(EditPerson.PreferredName) && EditPerson.Name != null)
+                {
+                    EditPerson.PreferredName = EditPerson.Name;
+                }
+                EditPerson.Name = user.Name;
+                EditPerson.Email = user.Email;
+            }
+        }
+        
+        if (IsAdmin)
+        {
+            person.UserId = EditPerson.UserId;
+        }
+        if (IsAdmin || IsPlanner)
+        {
+            person.IsPrimaryGuest = EditPerson.IsPrimaryGuest;
+        }
         person.Name = EditPerson.Name;
+        person.PreferredName = EditPerson.PreferredName;
         person.Email = EditPerson.Email;
         person.Phone = EditPerson.Phone;
         person.Address = EditPerson.Address;
+        person.Over18 = EditPerson.Over18;
         person.DietaryRequirements = EditPerson.DietaryRequirements;
+        person.DietaryRequirementsDescription = EditPerson.DietaryRequirementsDescription;
 
         if (DbContext.ReservationPeople.Any(rp => rp.Id == person.Id))
         {
@@ -349,7 +534,7 @@
         var exists = await DbContext.ReservationPeople.AnyAsync(rp => rp.Id == EditingPersonId);
         if (!exists)
         {
-            // remove from the array
+// remove from the array
             Reservation.People = Reservation.People.Where(rp => rp.Id != EditingPersonId).ToList();
         }
 
@@ -367,7 +552,7 @@
         }
     }
 
-    // Native Blazor Confirmation Dialog Methods
+// Native Blazor Confirmation Dialog Methods
     private async Task ConfirmDeleteGuest(ReservationPerson person)
     {
         var confirmed = await ShowConfirmationAsync(
@@ -382,14 +567,16 @@
         }
     }
 
-    private async Task<bool> ShowConfirmationAsync(string title, string message, string actionText)
+    private async Task
+        <bool> ShowConfirmationAsync(string title, string message, string actionText)
     {
         confirmationTitle = title;
         confirmationMessage = message;
         confirmationAction = actionText;
         showConfirmationDialog = true;
 
-        confirmationTaskCompletionSource = new TaskCompletionSource<bool>();
+        confirmationTaskCompletionSource = new TaskCompletionSource
+            <bool>();
         StateHasChanged();
 
         return await confirmationTaskCompletionSource.Task;
