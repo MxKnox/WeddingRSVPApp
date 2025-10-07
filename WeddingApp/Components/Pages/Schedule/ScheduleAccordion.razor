@@ -8,7 +8,7 @@
     {
         @foreach (var group in Entries.GroupBy(s => s.LocationId))
         {
-            <div class="accordion-item @(!hiddenItems.Contains(group.Key) ? "active" : "")" @key="group.Key">
+            <div class="accordion-item @(!displayedItems.Contains(group.Key) ? "" : "active")" @key="group.Key">
                 <button class="accordion-header" @onclick="() => ToggleItem(group.Key)">
                     <div>
                         <span style="font-weight:600;">@(GetLocationName(group.Key))</span>
@@ -23,18 +23,20 @@
                 </button>
 
                 <div class="accordion-content">
-                    <div style="display: flex; gap: var(--space-xl); align-items: flex-start;">
-                        @if (group.Key != null && group.Key != Guid.Empty)
-                        {
-                            <div style="flex: 1 1; ; min-width: 0; position: sticky; margin-top: var(--space-md); height: 100%;">
-                                <LocationCard Location="@GetLocation(group.Key)" IsCompact="false"/>
-                            </div>
-                        }
-                        <div style="flex: 1; min-width: 0; top: var(--space-md);">
+                    <div style="display: flex; gap: var(--space-sm); align-items: flex-start; flex-wrap: wrap">
+                        <div style="flex: 1; min-width: 200px; top: var(--space-sm); flex-wrap: wrap">
                             @foreach (var entry in group.OrderBy(e => e.StartTime))
                             {
-                                <div class="glass-card" style="margin-top: var(--space-md);">
-                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-md);">
+                                <div class="glass-card" style="margin-top: var(--space-sm);">
+                                    @if (!IsPublic && (IsAdmin || IsPlanner))
+                                    {
+                                        <div style="display: flex; gap: var(--space-sm); flex-shrink: 0;">
+                                            <button class="btn btn-primary btn-sm" @onclick="() => EditEntry(entry)">
+                                                Edit
+                                            </button>
+                                        </div>
+                                    }
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-sm);">
                                         <div style="flex: 1;">
                                             <h4 style="color: var(--primary); margin-bottom: var(--space-sm); font-family: var(--font-display);">
                                                 @entry.Title
@@ -49,18 +51,17 @@
                                             </div>
                                         </div>
 
-                                        @if (!IsPublic && (IsAdmin || IsPlanner))
-                                        {
-                                            <div style="display: flex; gap: var(--space-sm); flex-shrink: 0;">
-                                                <button class="btn btn-primary btn-sm" @onclick="() => EditEntry(entry)">
-                                                    Edit
-                                                </button>
-                                            </div>
-                                        }
+
                                     </div>
                                 </div>
                             }
                         </div>
+                        @if (group.Key != null && group.Key != Guid.Empty)
+                        {
+                            <div style="flex: 1 1; ; min-width: 200px; position: sticky; margin-top: var(--space-md); height: 100%; flex-wrap: wrap">
+                                <LocationCard Location="@GetLocation(group.Key)" IsCompact="false"/>
+                            </div>
+                        }
                     </div>
                 </div>
             </div>
@@ -83,7 +84,7 @@
 
     [Parameter] public EventCallback<ScheduleEntry> OnEdit { get; set; }
 
-    private readonly HashSet<Guid?> hiddenItems = new();
+    private readonly HashSet<Guid?> displayedItems = new();
     private bool IsAdmin;
     private bool IsPlanner;
 
@@ -109,10 +110,10 @@
 
     private void ToggleItem(Guid? key)
     {
-        if (hiddenItems.Contains(key))
-            hiddenItems.Remove(key);
+        if (displayedItems.Contains(key))
+            displayedItems.Remove(key);
         else
-            hiddenItems.Add(key);
+            displayedItems.Add(key);
     }
 
     private async Task EditEntry(ScheduleEntry entry)

@@ -6,5 +6,5 @@ services:
       context: ./WeddingApp
       dockerfile: Dockerfile
       tags:
-        - "ghcr.io/mxknox/weddingrsvpapp:1.0.5"
+        - "ghcr.io/mxknox/weddingrsvpapp:1.0.6"
         - "ghcr.io/mxknox/weddingrsvpapp:latest"

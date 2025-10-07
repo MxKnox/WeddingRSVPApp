@@ -4,6 +4,7 @@
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject ILogger<RSVP.Index> logger;
+@using System.Reflection
 @using System.Security.Claims
 @using Microsoft.EntityFrameworkCore
 @using WeddingApp.Data.Reservations
@@ -24,62 +25,138 @@
     else if (_isAdminOrPlanner)
     {
         <AuthorizeView>
-        <!-- Admin/Planner View - All Reservations -->
-        <div class="mb-3">
-            <button class="btn btn-primary" onclick="@(CreateNewReservation)">
-                + Create New Reservation
-            </button>
-        </div>
-
-        <div class="tile-container">
-            @foreach (var reservation in _allReservations)
-            {
-                <div class="tile" @onclick="() => ViewReservation(reservation.RegistrationToken)">
-                    <div class="tile-header">
-                        @(reservation.People.FirstOrDefault(p => p.IsPrimaryGuest)?.Name ?? "Unnamed Reservation")
-                    </div>
-
-                    <div class="tile-content">
-                        <p>
-                            Code: <strong>@reservation.RegistrationToken</strong>
-                        </p>
-                        <p>Guests: @reservation.People.Count</p>
-                        <p>
-                            Status:
-                            @switch (reservation.Status)
-                            {
-                                case ReservationStatus.Confirmed:
-                                    <span class="tag tag-success">Confirmed</span>
-                                    break;
-                                case ReservationStatus.Pending:
-                                    <span class="tag tag-warning">Pending</span>
-                                    break;
-                                case ReservationStatus.NotAttending:
-                                    <span class="tag tag-danger">Not Attending</span>
-                                    break;
-                            }
-                        </p>
-
-                        @if (reservation.People.Any(p => p.DietaryRequirements))
-                        {
-                            <p style="color: var(--warning); font-size: var(--text-xs);">
-                                ⚠️ Dietary requirements noted
-                            </p>
-                            @foreach (var person in reservation.People.Where(p => p.DietaryRequirements).ToList())
-                            {
-                                <p>@person.Name: @person.DietaryRequirementsDescription</p>
-                            }
-                        }
+            <div class="accordion stagger-children">
+                <div class="accordion-item @(!hiddenItems.Contains("Summary") ? "active" : "")" key="Summary">
+                    <button class="accordion-header" @onclick="@(() => ToggleItem("Summary"))">
+                        <div>
+                            <span style="font-weight:600;">Summary</span>
+                        </div>
+                        <span class="accordion-icon">▼</span>
+                    </button>
+                    <div class="accordion-content">
+                        <ul style="font-weight: bolder">
+                            <li style="list-style-type: 'Σ '">
+                                 Total Reservations: @_allReservations.Count()
+                            </li >
+                            <li style="list-style-type: 'Σ '">
+                                Total Invited Guests:
+                                @_allReservations.Sum(r => r.People.Count)
+                            </li>
+                            <li style="list-style-type: '✗ '; color: var(--danger)">
+                                Total Guests Not Attending:
+                                @_allReservations.Where(r => r.Status == ReservationStatus.NotAttending).Sum(r => r.People.Count)
+                            </li>
+                            <li style="list-style-type: '? '; color: var(--warning)">
+                                Total Guests Pending:
+                                @_allReservations.Where(r => r.Status == ReservationStatus.Pending).Sum(r => r.People.Count)
+                            </li>
+                            <li style="list-style-type: '✓ '; color: var(--success)">
+                                Total Guests Confirmed:
+                                @_allReservations.Where(r => r.Status == ReservationStatus.Confirmed).Sum(r => r.People.Count)
+                            </li>
+                            <li style="list-style-type: '⑱ '">
+                                Confirmed Guests Over 18:
+                                @_allReservations.Where(r => r.Status == ReservationStatus.Confirmed).SelectMany(r => r.People).Count()
+                            </li>
+                            <li style="list-style-type: '⚠ '; color: var(--warning)">
+                                Guests With Dietary Requirements:
+                                @_allReservations.Where(r => r.Status == ReservationStatus.Confirmed).SelectMany(r => r.People).Where(p => p.DietaryRequirements).Count()
+                            </li>
+                        </ul>
                     </div>
                 </div>
-            }
-        </div>
+                <div
+                    class="accordion-item @(!hiddenItems.Contains("SpecialDietGuests") ? "active" : "")"
+                    key="SpecialDietGuests">
+                    <button class="accordion-header"
+                            @onclick="@(() => ToggleItem("SpecialDietGuests"))">
+                        <div>
+                        <span
+                            style="font-weight:600;">Guests with Dietary requirements: (@_allReservations.Where(r => r.Status == ReservationStatus.Confirmed).SelectMany(r => r.People).Where(p => p.DietaryRequirements).Count())</span>
+                        </div>
+                        <span class="accordion-icon">▼</span>
+                    </button>
+                    <div class="accordion-content">
+                        <div class="tile-container">
+                            @foreach (var person in _allReservations.Where(r => r.Status == ReservationStatus.Confirmed).SelectMany(r => r.People).Where(p => p.DietaryRequirements))
+                            {
+                                <div class="glass-card" style="margin-top: var(--space-md);">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-md);">
+                                        <div style="flex: 1;">
+                                            <h6 style="color: var(--primary); margin-bottom: var(--space-sm); font-family: var(--font-display);">
+                                    
+                                                @(String.IsNullOrWhiteSpace(person.PreferredName) ? person.Name : person.PreferredName)
+                                            </h6>
+                                        </div>
+                                    </div>
+                                    <p style="color: var(--dark-gray); margin-bottom: var(--space-sm); line-height: 1.6;">
+                                        @person.DietaryRequirementsDescription
+                                    </p>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Admin/Planner View - All Reservations -->
+            <div class="mb-1 mt-3">
+                <button style="flex: 1; display: inline-flex" class="btn btn-primary" @onclick="CreateNewReservation">
+                    + Create New Reservation
+                </button>
+            </div>
+            <div class="tile-container">
+
+                @foreach (var reservation in _allReservations.OrderBy(r => (r.People.FirstOrDefault(p => p.IsPrimaryGuest)?.Name ?? "zzzz")))
+                {
+                    <div class="tile" @onclick="() => ViewReservation(reservation.RegistrationToken)">
+                        <div class="tile-header">
+                            @(reservation.People.FirstOrDefault(p => p.IsPrimaryGuest)?.Name ?? "Unnamed Reservation")
+                        </div>
+
+                        <div class="tile-content">
+                            <p>
+                                Code: <strong>@reservation.RegistrationToken</strong>
+                            </p>
+                            <p>Guests: @reservation.People.Count</p>
+                            <p>
+                                Status:
+                                @switch (reservation.Status)
+                                {
+                                    case ReservationStatus.Confirmed:
+                                        <span class="tag tag-success">Confirmed</span>
+                                        break;
+                                    case ReservationStatus.Pending:
+                                        <span class="tag tag-warning">Pending</span>
+                                        break;
+                                    case ReservationStatus.NotAttending:
+                                        <span class="tag tag-danger">Not Attending</span>
+                                        break;
+                                }
+                            </p>
+
+                            @if (reservation.People.Any(p => p.DietaryRequirements))
+                            {
+                                <p style="color: var(--warning); font-size: var(--text-xs);">
+                                    ⚠️ Dietary requirements noted
+                                </p>
+                                @foreach (var person in reservation.People.Where(p => p.DietaryRequirements).ToList())
+                                {
+                                    <p>@person.Name: @person.DietaryRequirementsDescription</p>
+                                }
+                            }
+                        </div>
+
+                    </div>
+                }
+            </div>
+
+
         </AuthorizeView>
     }
     else if (_userReservation != null)
     {
         <!-- Guest View - Redirect to their reservation -->
-        
+
         ViewReservation(_userReservation.RegistrationToken);
     }
     else
@@ -117,7 +194,7 @@
 
             <div class="form-group">
                 <InputNumber class="form-input" @bind-Value="_newReservationMaxGuests"></InputNumber>
-                
+
                 <label class="form-label">Max Allowed Guests</label>
             </div>
 
@@ -128,6 +205,7 @@
         </div>
     </div>
 }
+
 
 <style>
     .modal-backdrop {
@@ -164,6 +242,8 @@
     private string _newGuestName = "";
     private string _newGuestEmail = "";
     private int _newReservationMaxGuests = 5;
+    private List<string> hiddenItems = new List<string> { "Summary", "SpecialDietGuests" };
+
 
     protected override async Task OnInitializedAsync()
     {
@@ -172,11 +252,11 @@
 
         _isAdminOrPlanner = authState.User.IsInRole("Admin") || authState.User.IsInRole("Planner");
 
+
         if (_isAdminOrPlanner)
         {
             _allReservations = await DbContext.Reservations
                 .Include(r => r.People)
-                .OrderByDescending(r => r.CreatedDateTime)
                 .ToListAsync();
         }
         else if (!string.IsNullOrEmpty(_userId))
@@ -187,9 +267,8 @@
                 .FirstOrDefaultAsync(r => r.People.Any(p => p.UserId == _userId));
         }
 
+
         _isLoading = false;
-
-
     }
 
     private void ViewReservation(string token)
@@ -204,6 +283,7 @@
             Navigation.NavigateTo($"/rsvp/{_registrationCode}");
         }
     }
+
 
     private void CreateNewReservation()
     {
@@ -243,6 +323,14 @@
         CloseCreateModal();
         Navigation.NavigateTo($"/rsvp/{reservation.RegistrationToken}");
     }
-    
-    
+
+    private void ToggleItem(string key)
+    {
+        if (hiddenItems.Contains(key))
+            hiddenItems.Remove(key);
+        else
+            hiddenItems.Add(key);
+    }
+
+
 }
