@@ -863,25 +863,54 @@ h6 {
     background:url(/content/images/gui/microsoft.png);
 }
 
-/* Responsive */
+/* --- Mobile Navbar Dropdown --- */
 @media (max-width: 768px) {
+    .navbar {
+        position: relative;
+    }
+
+    /* Hide the menu by default */
     .navbar-menu {
         display: none;
+        flex-direction: column;
+        position: absolute;
+        top: 100%;
+        right: 0;
+        background: var(--white);
+        width: 100%;
+        box-shadow: var(--shadow-md);
+        border-top: 1px solid var(--medium-gray);
+        padding: var(--space-md) 0;
+        z-index: 99;
     }
 
-    .tile-container {
-        grid-template-columns: 1fr;
+    /* Show toggle button (the hamburger icon) */
+    .navbar-content::before {
+        content: "☰";
+        font-size: 1.5rem;
+        color: var(--primary);
+        cursor: pointer;
+        margin-left: auto;
     }
 
-    .countdown {
-        gap: var(--space-md);
+    /* When the menu is toggled open */
+    .navbar:focus-within .navbar-menu,
+    .navbar:hover .navbar-menu {
+        display: flex;
     }
 
-    .countdown-block {
-        min-width: 80px;
+    /* Adjust links for vertical layout */
+    .navbar-menu li {
+        text-align: center;
+        padding: var(--space-sm) 0;
     }
 
-    .file-grid {
-        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    .navbar-link {
+        display: inline-block;
+        padding: var(--space-sm) var(--space-md);
+    }
+
+    .navbar-brand {
+        flex-grow: 1;
     }
 }
